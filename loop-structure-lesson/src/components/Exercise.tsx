@@ -270,9 +270,10 @@ export function Exercise({
             <div className="comparison">
               <div className="section-label">我的对照记录</div>
               {(["pre", "post"] as const).map((t) => {
-                const a = attempts
-                  .filter((a) => a.level === l.id && a.plan.timing === t)
-                  .at(-1);
+                const matching = attempts.filter(
+                  (a) => a.level === l.id && a.plan.timing === t,
+                );
+                const a = matching[matching.length - 1];
                 return (
                   <div key={t}>
                     <span>{t === "pre" ? "先判断" : "先执行"}</span>
@@ -366,7 +367,7 @@ export function Exercise({
                 onClick={() =>
                   onChange(
                     {
-                      plan: structuredClone(l.answer),
+                      plan: { ...l.answer, body: [...l.answer.body] },
                       frame: initialFrame(l),
                       hint: true,
                     },

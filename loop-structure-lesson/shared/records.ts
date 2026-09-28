@@ -20,7 +20,8 @@ export function restoreSnapshot(s: Snapshot): Snapshot {
   let frame = initialFrame(l);
   if (s.result) {
     try {
-      frame = simulate(l.id, s.plan).frames.at(-1) || frame;
+      const frames = simulate(l.id, s.plan).frames;
+      frame = frames[frames.length - 1] || frame;
     } catch {
       /* Old invalid plans still show their recorded text. */
     }

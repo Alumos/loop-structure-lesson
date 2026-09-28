@@ -188,7 +188,7 @@ export function simulate(id: string, p: Plan): Simulation {
   const push = (text: string, active: Frame["active"] = null) => {
     s.text = text;
     s.active = active;
-    frames.push(structuredClone(s));
+    frames.push({ ...s, visited: [...s.visited], scanned: [...s.scanned] });
   };
   const dirs = [
       [1, 0],

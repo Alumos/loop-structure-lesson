@@ -231,3 +231,81 @@ test("规范流程图保留分支、时机切换和积木编辑", async ({ page 
     ),
   ).toBe(true);
 });
+
+test("缺少新浏览器 API 时仍可加载名单、登录、运行和查看对照记录", async ({
+  browser,
+  page,
+}) => {
+  const legacyBrowser = () => {
+    Object.defineProperty(AbortSignal, "timeout", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(globalThis, "structuredClone", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(Array.prototype, "at", {
+      value: undefined,
+      configurable: true,
+    });
+    Object.defineProperty(crypto, "randomUUID", {
+      value: undefined,
+      configurable: true,
+    });
+  };
+  await page.addInitScript(legacyBrowser);
+  await page.goto("/teacher");
+  await page.getByLabel("密码", { exact: true }).fill("browser-test-password");
+  await page.getByRole("button", { name: "进入飞控中心" }).click();
+  await expect(
+    page.getByRole("heading", { name: "每一次尝试，都看得见。" }),
+  ).toBeVisible();
+  const created = await page.request.post("/api/teacher/classrooms", {
+    data: { classId: "demo-5", name: "旧浏览器兼容课堂" },
+  });
+  const room = await created.json();
+  await page.request.patch(`/api/teacher/classrooms/${room.id}`, {
+    data: { settings: { quizOpen: true, answersOpen: true, openLevel: "all" } },
+  });
+  const context = await browser.newContext();
+  try {
+    await context.addInitScript(legacyBrowser);
+    const student = await context.newPage();
+    const errors: string[] = [];
+    student.on("pageerror", (error) => errors.push(error.message));
+    await student.goto("/");
+    await student.getByLabel("你的班级").selectOption("demo-5");
+    const classroomSelect = student.getByLabel("当前课堂", { exact: true });
+    if (await classroomSelect.count())
+      await classroomSelect.selectOption(room.id);
+    await student.getByRole("button", { name: "演示学生甲 001" }).click();
+    await student.getByRole("button", { name: "进入巡视课堂" }).click();
+    await expect(
+      student.getByRole("heading", { name: "建立中继通信" }),
+    ).toBeVisible();
+    await student.getByRole("button", { name: "6 轮", exact: true }).click();
+    await student.getByRole("button", { name: "填入讲评参考方案" }).click();
+    await student
+      .getByRole("button", { name: "开始模拟", exact: true })
+      .click();
+    await expect(student.locator(".run-status")).toContainText("任务完成", {
+      timeout: 25000,
+    });
+    await expect(student.locator(".attempt-row")).toContainText("任务完成");
+    await expect
+      .poll(async () => {
+        const response = await context.request.get("/api/student/me");
+        return (await response.json()).attempts.length;
+      })
+      .toBe(1);
+    await student.reload();
+    await expect(
+      student.getByRole("heading", { name: "建立中继通信" }),
+    ).toBeVisible();
+    await expect(student.locator(".attempt-row")).toContainText("任务完成");
+    expect(errors).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
