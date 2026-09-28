@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { request as httpRequest } from "node:http";
+import WebSocket from "ws";
 import { levels, simulate } from "../shared/engine.js";
 const dir = mkdtempSync(join(tmpdir(), "moon-api-")),
   port = 19341,
@@ -403,4 +405,103 @@ test("仅保存不同方案和预测，鼠标与动画不增加记录或覆盖�
   assert.equal(detail.state.prediction, "6 轮");
   assert.equal(detail.state.frame, undefined);
   assert.equal(detail.predictions[0].prediction, "6 轮");
+});
+
+test("HTTPS 反代改写 Host 后可入班、恢复会话和连接实时画面，共享 IP 不阻止整班入班", async () => {
+  const created = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "反向代理回归课堂",
+  });
+  const joinBody = JSON.stringify({
+    classroomId: created.data.id,
+    studentIds: ["001"],
+  });
+  const proxyHeaders = {
+    Host: "internal-container:3000",
+    Origin: "https://loop.alumos.cn",
+    "Sec-Fetch-Site": "same-origin",
+  };
+  function proxyJoin(headers: Record<string, string>) {
+    return new Promise<{ status: number; cookie: string; data: any }>(
+      (resolve, reject) => {
+        const request = httpRequest(
+          base + "/api/student/join",
+          {
+            method: "POST",
+            headers: { ...headers, "Content-Type": "application/json" },
+          },
+          (response) => {
+            let body = "";
+            response.on("data", (chunk) => {
+              body += chunk;
+            });
+            response.on("end", () => {
+              try {
+                resolve({
+                  status: response.statusCode!,
+                  cookie:
+                    response.headers["set-cookie"]?.[0]?.split(";")[0] || "",
+                  data: JSON.parse(body),
+                });
+              } catch (error) {
+                reject(error);
+              }
+            });
+            response.on("error", reject);
+          },
+        );
+        request.on("error", reject);
+        request.end(joinBody);
+      },
+    );
+  }
+  let cookie = "";
+  // Rejoin the same virtual student to exercise a classroom's shared-IP quota.
+  for (let i = 0; i < 45; i++) {
+    const joined = await proxyJoin(proxyHeaders);
+    assert.equal(joined.status, 200, JSON.stringify(joined.data));
+    cookie = joined.cookie;
+  }
+  assert.equal((await req("/student/me", undefined, cookie)).status, 200);
+  const blocked = await proxyJoin({
+    ...proxyHeaders,
+    Origin: "https://evil.example",
+    "Sec-Fetch-Site": "cross-site",
+  });
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.code, "ORIGIN_MISMATCH");
+
+  function handshake(headers: Record<string, string>) {
+    return new Promise<number>((resolve, reject) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?role=student`, {
+        headers: { ...headers, Cookie: cookie },
+        handshakeTimeout: 5000,
+      });
+      ws.once("message", (message) => {
+        try {
+          assert.equal(JSON.parse(String(message)).type, "connected");
+          resolve(101);
+        } catch (error) {
+          reject(error);
+        } finally {
+          ws.close();
+        }
+      });
+      ws.once("unexpected-response", (_request, response) => {
+        response.resume();
+        resolve(response.statusCode!);
+        ws.terminate();
+      });
+      ws.on("error", reject);
+    });
+  }
+  assert.equal(await handshake(proxyHeaders), 101);
+  assert.equal(
+    await handshake({
+      ...proxyHeaders,
+      Origin: "https://evil.example",
+      "Sec-Fetch-Site": "cross-site",
+    }),
+    403,
+  );
 });

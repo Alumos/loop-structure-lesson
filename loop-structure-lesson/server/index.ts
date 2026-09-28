@@ -1,3 +1,4 @@
+import { allowedOrigin } from "./origin.js";
 import {
   compactSnapshot,
   restoreSnapshot,
@@ -65,16 +66,26 @@ const app = express();
 app.disable("x-powered-by");
 if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
 app.use(express.json({ limit: "768kb" }));
+const originOptions = () => ({
+  publicOrigin: process.env.PUBLIC_ORIGIN,
+  trustProxy: process.env.TRUST_PROXY === "1",
+});
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "DENY");
   if (req.path.startsWith("/api")) res.setHeader("Cache-Control", "no-store");
-  if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && req.headers.origin) {
-    const allowed =
-      process.env.PUBLIC_ORIGIN || `${req.protocol}://${req.get("host")}`;
-    if (req.headers.origin !== allowed)
-      return res.status(403).json({ error: "来源校验失败" });
+  if (
+    !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+    !allowedOrigin(req, originOptions())
+  ) {
+    return res
+      .status(403)
+      .json({
+        error:
+          "来源校验失败，请通过本站页面操作；若使用反向代理，请检查 PUBLIC_ORIGIN 配置",
+        code: "ORIGIN_MISMATCH",
+      });
   }
   next();
 });
@@ -85,7 +96,7 @@ function rate(req: Request, res: Response, next: NextFunction) {
     record = limits.get(key);
   if (!record || record.until < now)
     limits.set(key, { count: 1, until: now + 60_000 });
-  else if (++record.count > 20)
+  else if (++record.count > (req.path === "/api/student/join" ? 240 : 20))
     return res.status(429).json({ error: "请求过于频繁，请稍后再试" });
   next();
 }
@@ -185,11 +196,8 @@ http.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  const origin = req.headers.origin,
-    expected =
-      process.env.PUBLIC_ORIGIN ||
-      `${req.headers["x-forwarded-proto"] === "https" && process.env.TRUST_PROXY === "1" ? "https" : "http"}://${req.headers.host}`;
-  if (origin !== expected) {
+  if (!allowedOrigin(req, { ...originOptions(), requireOrigin: true })) {
+    socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
     socket.destroy();
     return;
   }
