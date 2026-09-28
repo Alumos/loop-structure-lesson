@@ -1,0 +1,32 @@
+services:
+  classroom:
+    image: ${IMAGE_NAME:-ghcr.io/alumos/loop-structure-lesson:latest}
+    build: .
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${BIND_IP:-0.0.0.0}:${APP_PORT:-18763}:3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /app/data
+      CLASS_SYSTEM_URL: ${CLASS_SYSTEM_URL:-https://class.alumos.cn}
+      CLASS_SYSTEM_TOKEN: ${CLASS_SYSTEM_TOKEN:?请在 .env 中填写名单共享密钥}
+      TEACHER_USERNAME: ${TEACHER_USERNAME:-Alumos}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      REPLAY_RETENTION_DAYS: ${REPLAY_RETENTION_DAYS:-7}
+      RECORD_RETENTION_DAYS: ${RECORD_RETENTION_DAYS:-30}
+      MAX_EVENTS_PER_STUDENT: ${MAX_EVENTS_PER_STUDENT:-20000}
+    volumes:
+      - classroom_data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  classroom_data:

@@ -1,0 +1,349 @@
+import { test, before, after } from "node:test";
+import assert from "node:assert/strict";
+import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { levels } from "../shared/engine.js";
+const dir = mkdtempSync(join(tmpdir(), "moon-api-")),
+  port = 19341,
+  base = `http://127.0.0.1:${port}`;
+let server: ChildProcess,
+  teacherCookie = "",
+  studentCookie = "",
+  room = "",
+  participant = "";
+async function req(
+  path: string,
+  body?: any,
+  cookie = teacherCookie,
+  method?: string,
+) {
+  const r = await fetch(base + "/api" + path, {
+    method: method || (body === undefined ? "GET" : "POST"),
+    headers: {
+      "Content-Type": "application/json",
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  return {
+    status: r.status,
+    data: await r.json(),
+    cookie: r.headers.get("set-cookie")?.split(";")[0] || "",
+  };
+}
+before(async () => {
+  server = spawn(process.execPath, ["--import", "tsx", "server/index.ts"], {
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: dir,
+      AUTH_MODE: "demo",
+      DEMO_PASSWORD: "test-password",
+      TEACHER_USERNAME: "Alumos",
+    },
+    stdio: "pipe",
+  });
+  let logs = "";
+  server.stderr?.on("data", (d) => (logs += d));
+  for (let i = 0; i < 100; i++) {
+    try {
+      if ((await fetch(base + "/api/health")).ok) return;
+    } catch {}
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("Server failed: " + logs);
+});
+after(async () => {
+  server?.kill("SIGTERM");
+  if (server && server.exitCode === null)
+    await new Promise<void>((r) => server.once("exit", () => r()));
+  rmSync(dir, { recursive: true, force: true });
+});
+test("教师认证、独立作答、幂等补传、权限边界和两级清理", async () => {
+  assert.equal((await req("/teacher/classrooms", undefined, "")).status, 401);
+  assert.equal(
+    (await req("/teacher/login", { username: "Alumos", password: "wrong" }, ""))
+      .status,
+    401,
+  );
+  const login = await req(
+    "/teacher/login",
+    { username: "Alumos", password: "test-password" },
+    "",
+  );
+  assert.equal(login.status, 200);
+  teacherCookie = login.cookie;
+  const created = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "测试课堂",
+  });
+  assert.equal(created.status, 200);
+  room = created.data.id;
+  const enrollment = await req("/enrollment", undefined, "");
+  assert.equal(enrollment.data.classes[0].students[0].id, "001");
+  const joined = await req(
+    "/student/join",
+    { classroomId: room, studentIds: ["001", "002"] },
+    "",
+  );
+  studentCookie = joined.cookie;
+  participant = joined.data.participant.id;
+  assert.equal(
+    (
+      await req(
+        "/teacher/participants/" + participant,
+        undefined,
+        studentCookie,
+      )
+    ).status,
+    401,
+  );
+  const csrf = await fetch(base + "/api/student/heartbeat", {
+    method: "POST",
+    headers: {
+      Origin: "https://evil.example",
+      Cookie: studentCookie,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  assert.equal(csrf.status, 403);
+  const event = {
+    id: randomUUID(),
+    at: Date.now(),
+    kind: "predict",
+    label: "预测 6 轮",
+    snapshot: { activity: "l1", prediction: "6 轮" },
+  };
+  assert.equal(
+    (await req("/student/events", { events: [event] }, studentCookie)).status,
+    200,
+  );
+  await req("/student/events", { events: [event] }, studentCookie);
+  let history = await req(`/teacher/participants/${participant}/events`);
+  assert.equal(history.data.events.length, 1);
+  const attempt = {
+    id: randomUUID(),
+    level: "l1",
+    plan: levels[0].answer,
+    prediction: "6 轮",
+    assisted: false,
+  };
+  await req("/student/attempts", attempt, studentCookie);
+  await req("/student/attempts", attempt, studentCookie);
+  let detail = await req("/teacher/participants/" + participant);
+  assert.equal(detail.data.attempts.length, 1);
+  assert.equal(detail.data.attempts[0].win, 1);
+  const answer = {
+    id: randomUUID(),
+    studentId: "001",
+    question: "q1",
+    answers: [1, 1],
+    note: "两步合为一轮",
+  };
+  assert.equal(
+    (await req("/student/answers", answer, studentCookie)).status,
+    403,
+  );
+  await req(
+    "/teacher/classrooms/" + room,
+    { settings: { quizOpen: true, answersOpen: false, openLevel: "all" } },
+    teacherCookie,
+    "PATCH",
+  );
+  assert.equal(
+    (
+      await req(
+        "/student/answers",
+        { ...answer, studentId: "003" },
+        studentCookie,
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (await req("/student/answers", answer, studentCookie)).status,
+    200,
+  );
+  await req("/student/answers", answer, studentCookie);
+  assert.equal(
+    (await req("/student/results", undefined, studentCookie)).status,
+    403,
+  );
+  detail = await req("/teacher/participants/" + participant);
+  assert.equal(detail.data.answers.length, 1);
+  assert.equal(detail.data.answers[0].score, 2);
+  const replayCriteria = { classroomId: room, replaysOnly: true },
+    replay = await req("/teacher/cleanup/preview", replayCriteria);
+  assert.equal(replay.data.events, 1);
+  assert.equal(replay.data.answers, 0);
+  assert.equal(
+    (
+      await req("/teacher/cleanup", {
+        ...replayCriteria,
+        token: replay.data.token,
+        confirmation: "清理",
+      })
+    ).status,
+    200,
+  );
+  history = await req(`/teacher/participants/${participant}/events`);
+  assert.equal(history.data.events.length, 0);
+  detail = await req("/teacher/participants/" + participant);
+  assert.equal(detail.data.attempts.length, 1);
+  assert.equal(detail.data.answers.length, 1);
+  const criteria = { classroomId: room, replaysOnly: false },
+    preview = await req("/teacher/cleanup/preview", criteria);
+  assert.equal(preview.data.students, 2);
+  assert.equal(preview.data.attempts, 1);
+  assert.equal(
+    (
+      await req("/teacher/cleanup", {
+        ...criteria,
+        token: "stale",
+        confirmation: "清理",
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    (
+      await req("/teacher/cleanup", {
+        ...criteria,
+        token: preview.data.token,
+        confirmation: "清理",
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await req("/student/events", { events: [event] }, studentCookie)).status,
+    401,
+  );
+  assert.equal(
+    (await req("/student/attempts", attempt, studentCookie)).status,
+    401,
+  );
+  assert.equal((await req("/teacher/participants/" + participant)).status, 404);
+  assert.equal(
+    (await req("/enrollment", undefined, "")).data.classes[0].students.length,
+    3,
+  );
+  assert.equal(
+    (await req("/teacher/classrooms/" + room + "/summary")).data.length,
+    0,
+  );
+});
+
+test("事件数量上限与到期清理保留近期成绩，删除过期小组", async () => {
+  const recent = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "保留成绩课堂",
+  });
+  const joined = await req(
+    "/student/join",
+    { classroomId: recent.data.id, studentIds: ["003"] },
+    "",
+  );
+  const cookie = joined.cookie,
+    pid = joined.data.participant.id;
+  for (let i = 0; i < 11; i++) {
+    const events = Array.from({ length: 100 }, () => ({
+      id: randomUUID(),
+      at: Date.now(),
+      kind: "pointer",
+      label: "移动鼠标",
+      snapshot: { activity: "l1" },
+    }));
+    assert.equal(
+      (await req("/student/events", { events }, cookie)).status,
+      200,
+    );
+  }
+  const sql = new DatabaseSync(join(dir, "classroom.sqlite"));
+  // Production cap is exercised by the same delete statement; set the fixture beyond its default cap.
+  const insert = sql.prepare(
+    "INSERT INTO events(event_id,participant_id,at,client_at,kind,label,snapshot) VALUES(?,?,?,?,?,?,?)",
+  );
+  sql.exec("BEGIN");
+  for (let i = 0; i < 20000; i++)
+    insert.run(
+      randomUUID(),
+      pid,
+      Date.now(),
+      Date.now(),
+      "pointer",
+      "移动鼠标",
+      '{"activity":"l1"}',
+    );
+  sql.exec("COMMIT");
+  await req(
+    "/student/events",
+    {
+      events: [
+        {
+          id: randomUUID(),
+          at: Date.now(),
+          kind: "predict",
+          label: "预测",
+          snapshot: { activity: "l1" },
+        },
+      ],
+    },
+    cookie,
+  );
+  assert.equal(
+    (
+      sql
+        .prepare("SELECT count(*) AS n FROM events WHERE participant_id=?")
+        .get(pid) as any
+    ).n,
+    20000,
+  );
+  await req(
+    "/student/attempts",
+    {
+      id: randomUUID(),
+      level: "l1",
+      plan: levels[0].answer,
+      prediction: "6 轮",
+      assisted: false,
+    },
+    cookie,
+  );
+  const old = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "过期课堂",
+  });
+  const oldJoin = await req(
+    "/student/join",
+    { classroomId: old.data.id, studentIds: ["001"] },
+    "",
+  );
+  const oldId = oldJoin.data.participant.id;
+  sql
+    .prepare("UPDATE events SET at=? WHERE participant_id=?")
+    .run(Date.now() - 8 * 86400000, pid);
+  sql
+    .prepare("UPDATE participants SET last_seen=? WHERE id=?")
+    .run(Date.now() - 31 * 86400000, oldId);
+  sql.close();
+  await req("/teacher/storage/compact", {});
+  assert.equal(
+    (await req(`/teacher/participants/${pid}/events`)).data.events.length,
+    0,
+  );
+  assert.equal(
+    (await req("/teacher/participants/" + pid)).data.attempts.length,
+    1,
+  );
+  assert.equal((await req("/teacher/participants/" + oldId)).status, 404);
+  assert.equal(
+    (await req("/student/me", undefined, oldJoin.cookie)).status,
+    401,
+  );
+});

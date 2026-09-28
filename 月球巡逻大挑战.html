@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>月球巡逻大挑战 · 循环结构</title>
+<style>
+:root{
+  --bg:#f3f6f7; --card:#fff; --ink:#1d292d; --sub:#5e7075;
+  --indigo:#246b78; --indigo-l:#e8f3f4; --amber:#db8a21; --amber-l:#fff4df;
+  --green:#26845b; --green-l:#e9f5ed; --red:#d84e43; --line:#d8e2e4;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+body{margin:0; font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif; background:var(--bg); color:var(--ink); font-size:16px;}
+button{font-family:inherit; cursor:pointer; border:none;}
+.hidden{display:none !important;}
+
+/* ===== 主页 ===== */
+#home{max-width:980px; margin:0 auto; padding:28px 18px 40px;}
+.hero{background:#19515e; color:#fff; border-radius:8px; padding:24px 26px;}
+.hero h1{margin:0 0 8px; font-size:29px;}
+.hero p{margin:4px 0; opacity:.95; line-height:1.7; font-size:15px;}
+.levels{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; margin-top:20px;}
+.lvcard{background:var(--card); border-radius:14px; padding:16px; border:2px solid transparent; box-shadow:0 4px 14px rgba(31,41,55,.06); text-align:left; transition:.15s; width:100%;}
+.lvcard:hover{border-color:var(--indigo); transform:translateY(-2px);}
+.lvcard .lvname{font-size:17px; font-weight:700; margin-bottom:6px;}
+.lvcard .lvstory{font-size:14px; color:var(--sub); line-height:1.6;}
+.lvcard .stars{margin-top:8px; font-size:17px; letter-spacing:2px; color:#f5b301;}
+.homefoot{margin-top:20px; text-align:center; color:var(--sub); font-size:13px; line-height:1.8;}
+.homefoot button{color:var(--sub); text-decoration:underline; font-size:13px; background:none;}
+
+/* ===== 游戏页 ===== */
+#game{max-width:1240px; margin:0 auto; padding:16px 14px 30px;}
+.topbar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;}
+.topbar .back{background:var(--card); border-radius:99px; padding:8px 16px; font-size:14px; box-shadow:0 2px 8px rgba(31,41,55,.08);}
+.topbar h2{margin:0; font-size:20px;}
+.topbar .goal{font-size:13px; color:var(--sub); background:var(--card); border-radius:99px; padding:6px 14px;}
+.levelnav{display:flex; gap:6px; overflow-x:auto; padding-bottom:8px; margin-bottom:10px;}
+.levelnav button{flex:1 0 160px; min-height:46px; text-align:left; background:#fff; color:var(--sub); border:1px solid var(--line); border-radius:6px; padding:7px 10px; font-size:13px; font-weight:700;}
+.levelnav button.active{background:var(--indigo); color:#fff; border-color:var(--indigo);}
+.levelnav button .navstars{float:right; color:#ecb644;}
+.mission{background:#fff; border-left:4px solid var(--amber); padding:12px 16px; margin-bottom:14px; display:grid; gap:5px;}
+.mission .scene{font-size:15px; line-height:1.6;}
+.mission .task{font-size:14px; color:#8b530e; font-weight:700;}
+.main{display:flex; gap:16px; align-items:flex-start; flex-wrap:wrap;}
+.left{flex:1 1 360px; min-width:0;}
+.right{flex:1 1 570px; min-width:0;}
+
+.boardwrap{background:var(--card); border-radius:14px; padding:16px; box-shadow:0 4px 14px rgba(31,41,55,.06);}
+.moonbg{background:#263d45; border-radius:8px; padding:14px; display:flex; justify-content:center; overflow-x:auto;}
+#board{position:relative; display:grid; gap:6px;}
+.cell{border-radius:6px; background:#dce6e7; border:1px solid #b6c6c8; position:relative; display:flex; align-items:flex-end; justify-content:center; padding-bottom:5px; color:#304b52; font-size:11px; font-weight:700;}
+.cell.crater{background:#814d4d; border-color:#a7655e; color:#fff;}
+.cell.crater::after{content:"🕳"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:calc(var(--cs,64px) * .45);}
+.cell.camp{background:#acd7bb; border-color:#64a47a;}
+.cell.camp::after{content:"🏕️"; position:absolute; inset:0 0 10px; display:flex; align-items:center; justify-content:center; font-size:calc(var(--cs,64px) * .46);}
+.cell.visited{background:#b7d8db;}
+.cell.route{background:#d5ead9; border-color:#74a690;}
+.cell.visited.route{background:#acd4bf;}
+.cell.start,.cell.visited.start{background:#f6d488; box-shadow:inset 0 0 0 3px #d58b21;}
+.cell.edge-hit{box-shadow:inset 0 0 0 4px var(--red); outline:3px solid #ffb6ae;}
+.cell.visited.camp{background:#8fcca5;}
+.cell.sample{background:#d5ead9; border-color:#74a690; font-size:10px; line-height:1.1; overflow-wrap:anywhere;}
+.cell.sample.scanned{background:#b7d3c0;}
+.cell.sample.ice-found{background:#86c9da; border-color:#318da4; color:#123f4a;}
+.cell.pulsed::before{content:"📡"; position:absolute; top:3px; left:4px; font-size:calc(var(--cs,64px) * .2); line-height:1;}
+.cell.pulse-error{background:#f7d0c9; border-color:var(--red); box-shadow:inset 0 0 0 3px var(--red);}
+.outside-marker{position:absolute; display:flex; align-items:flex-end; justify-content:center; padding-bottom:5px; border:2px dashed #ef8d80; border-radius:6px; background:#683f43; color:#fff; font-size:11px; font-weight:700;}
+.outside-marker.hit{background:#b43e3b; border-color:#fff; box-shadow:0 0 0 3px #f7a49a;}
+#rover{position:absolute; transition:transform .38s ease; z-index:5;}
+#rover .inner{width:100%; height:100%; position:relative; transition:transform .38s ease;}
+#rover .badge{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:76%; height:76%; border-radius:50%; background:#fff; display:flex; align-items:center; justify-content:center; box-shadow:0 2px 6px rgba(0,0,0,.4); border:2px solid #ffd166; font-size:calc(var(--cs,64px) * .46); line-height:1;}
+#rover .face{position:absolute; font-size:0; width:0; height:0; border-top:8px solid transparent; border-bottom:8px solid transparent; border-left:13px solid #ffd166; right:-15px; top:50%; transform:translateY(-50%);}
+.statusbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; font-size:13px;}
+.statusbar .chip{background:var(--indigo-l); color:#3742a8; border-radius:99px; padding:5px 12px; font-weight:600;}
+.statusbar .chip.warn{background:var(--amber-l); color:#8b530e;}
+.battwrap{display:flex; align-items:center; gap:8px; margin-top:10px;}
+.battwrap .blabel{font-size:13px; color:var(--sub);}
+.segs{display:flex; gap:3px; flex:1;}
+.seg{height:12px; flex:1; border-radius:3px; background:var(--green); transition:.2s;}
+.seg.off{background:#e5e9f2;}
+.seg.low{background:var(--red);}
+.runrow{display:flex; gap:10px; margin-top:14px; flex-wrap:wrap;}
+.bigbtn{background:var(--indigo); color:#fff; border-radius:6px; padding:12px 22px; font-size:17px; font-weight:700;}
+.bigbtn:active{transform:scale(.97);}
+.bigbtn.stop{background:var(--red);}
+.ghostbtn{background:var(--card); color:var(--ink); border-radius:6px; padding:12px 16px; font-size:15px; border:1.5px solid var(--line); font-weight:600;}
+.phase{margin-top:10px; padding:8px 10px; min-height:38px; background:#f1f5f5; border-left:3px solid var(--indigo); font-size:13px; font-weight:700;}
+.phase.check{background:var(--amber-l); border-color:var(--amber);}
+.phase.act{background:var(--indigo-l); border-color:var(--indigo);}
+.readout{margin-top:12px; border-top:1px solid var(--line); padding-top:10px;}
+.readout h3{font-size:14px; margin:0 0 7px;}
+.trace{font-size:13px; color:var(--sub); min-height:40px; max-height:220px; overflow-y:auto; white-space:pre-line; line-height:1.6;}
+.compare{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; margin-top:10px;}
+.compare div{background:#f2f5f5; padding:8px; border-radius:5px; min-height:62px; font-size:12px; line-height:1.45;}
+.compare strong{display:block; color:var(--ink); margin-bottom:3px;}
+.compare .success{color:var(--green);}.compare .failure{color:var(--red);}
+.compare-note{font-size:13px; margin-top:8px; color:var(--ink); font-weight:700;}
+.speedseg{display:flex; border-radius:12px; overflow:hidden; border:1.5px solid var(--line);}
+.speedseg button{padding:12px 14px; font-size:14px; background:var(--card); color:var(--sub);}
+.speedseg button.on{background:var(--indigo-l); color:var(--indigo); font-weight:700;}
+
+/* 小七 */
+.xiaoqi{display:flex; gap:10px; margin-top:14px; background:var(--amber-l); border-radius:14px; padding:12px;}
+.xiaoqi .avatar{width:42px; height:42px; flex:none; border-radius:50%; background:linear-gradient(135deg,#f59e0b,#f97316); display:flex; align-items:center; justify-content:center; font-size:22px;}
+.xiaoqi .bubble{font-size:14px; line-height:1.6; color:#7c4a03;}
+.xiaoqi .bubble b{color:#b45309;}
+.xiaoqi .askbtn{margin-top:6px; background:#fff; border-radius:99px; padding:4px 12px; font-size:12.5px; color:#b45309; border:1px solid #f3d9a8;}
+
+/* ===== 分步提示卡（左栏） ===== */
+.hintcard{background:var(--card); border-radius:14px; padding:12px 14px; margin-bottom:14px; box-shadow:0 4px 14px rgba(31,41,55,.06); border:1.5px solid #e6ebf7;}
+.hh{display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+.hh .htitle{font-weight:800; font-size:15px;}
+.hh .hstep{font-size:12.5px; color:var(--indigo); background:var(--indigo-l); border-radius:99px; padding:3px 10px; font-weight:700;}
+.hdots{display:flex; gap:4px;}
+.hdots i{width:7px; height:7px; border-radius:50%; background:#dbe2f0; display:block;}
+.hdots i.on{background:var(--indigo);}
+.hh .hmin{margin-left:auto; background:none; font-size:12.5px; color:var(--sub); text-decoration:underline; padding:2px 0;}
+.hmain{margin-top:9px;}
+.hst{font-weight:700; font-size:15px; line-height:1.5;}
+.hsd{font-size:13.5px; color:var(--sub); line-height:1.65; margin-top:4px;}
+.hbtns{display:flex; gap:8px; margin-top:11px; flex-wrap:wrap;}
+.hbtns button{border-radius:10px; padding:8px 12px; font-size:13.5px; font-weight:700; background:var(--bg); border:1.5px solid var(--line); color:var(--ink);}
+.hbtns button.ansbtn{background:var(--amber-l); border-color:#f3d9a8; color:#8a5306;}
+.hbtns button:disabled{opacity:.4;}
+
+/* ===== 标准答案弹窗 ===== */
+#ansModal{position:fixed; inset:0; background:rgba(23,30,54,.45); display:flex; align-items:center; justify-content:center; z-index:70; padding:16px;}
+.acard{background:#fff; border-radius:18px; max-width:540px; width:100%; padding:20px 22px; box-shadow:0 20px 60px rgba(0,0,0,.25); max-height:88vh; overflow:auto;}
+.acard h3{text-align:center; margin:0 0 12px; font-size:19px;}
+.ansline{display:flex; gap:10px; align-items:flex-start; margin:10px 0;}
+.anslab{flex:none; width:104px; font-size:13px; color:var(--sub); font-weight:700; padding-top:6px; white-space:nowrap;}
+.ansval{background:var(--amber-l); color:#8a5306; border:1.5px solid #f3d9a8; border-radius:9px; padding:6px 12px; font-weight:700; font-size:14.5px;}
+.ansblocks{display:flex; flex-wrap:wrap; gap:6px; align-items:center;}
+.mini{font-size:13.5px; padding:6px 11px; border-radius:8px; font-weight:600;}
+.mini.act{background:var(--indigo-l); border:1.5px solid #b9c6fa; color:#2d3a9e;}
+.mini.io{background:#e2f6f1; border:1.5px solid #14b8a6; color:#0f6d5c;}
+.mini.dec{background:#fbd98d; border:1.5px solid #f0b429; color:#8a5306;}
+.arrow{color:#94a3b8; font-weight:700;}
+.answhy{margin-top:12px; background:var(--bg); border-radius:10px; padding:10px 12px; font-size:13.5px; line-height:1.65;}
+
+/* ===== 设计器（标准流程图） ===== */
+.designer{background:var(--card); border-radius:14px; padding:12px 14px 16px; box-shadow:0 4px 14px rgba(31,41,55,.06);}
+.condrow{display:flex; align-items:center; gap:9px; margin-bottom:9px; flex-wrap:wrap; font-size:13px; font-weight:700;}
+.condrow select{font:inherit; color:var(--ink); background:#fff; border:1.5px solid var(--line); border-radius:5px; padding:7px 10px; min-height:38px;}
+.timerow{display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap; background:#f6f8fe; border:1.5px solid var(--line); border-radius:12px; padding:8px 10px; position:relative; z-index:6;}
+.timerow .lab{font-size:13px; color:var(--sub); font-weight:600;}
+.timepill{background:var(--bg); border:2px solid var(--line); border-radius:99px; padding:5px 13px; font-size:13.5px; color:var(--ink);}
+.timepill.on{background:var(--indigo-l); border-color:var(--indigo); color:var(--indigo); font-weight:700;}
+.palette{display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 2px 12px; border-bottom:1px solid var(--line); margin-bottom:10px;}
+.palette strong{font-size:13px; margin-right:5px;}
+.palette-block{touch-action:none; user-select:none; cursor:grab; background:var(--indigo-l); border:2px solid #8ab9c0; color:#185866; border-radius:5px; padding:9px 13px; font-size:14px; font-weight:700;}
+.palette-block:active{cursor:grabbing;}
+.drag-ghost{position:fixed; z-index:100; pointer-events:none; opacity:.9; box-shadow:0 9px 25px rgba(0,0,0,.18);}
+.flowwrap{overflow-x:auto; padding:2px 0 6px;}
+#flow{position:relative; width:560px; margin:0 auto;}
+#wires{position:absolute; left:0; top:0; z-index:1; pointer-events:none;}
+.wire{stroke:#64748b; stroke-width:1.7; fill:none;}
+.wlabel{font-size:12.5px; fill:#334155; font-weight:700;}
+.wloop{stroke:#8b5cf6;}
+.fbodybg{position:absolute; background:#eaf1ff; border-radius:14px; z-index:0;}
+.fnode{position:absolute; z-index:2; display:flex; align-items:center; justify-content:center; text-align:center; font-size:14px; cursor:pointer; line-height:1.3;}
+.fnode.term{background:var(--green-l); border:2px solid var(--green); color:#166534; font-weight:700; border-radius:999px;}
+.fnode.act{background:var(--indigo-l); border:2px solid #b9c6fa; color:#2d3a9e; font-weight:600;}
+.fio{position:absolute; z-index:2; transform:skewX(-14deg); background:#e2f6f1; border:2px solid #14b8a6; cursor:pointer; display:flex; align-items:center; justify-content:center;}
+.fio span{transform:skewX(14deg); font-size:14px; color:#0f6d5c; font-weight:600;}
+.fdec{position:absolute; z-index:2; clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%); background:#cdd7fb; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:13.5px; font-weight:700; color:#2d3a9e;}
+.fdec.decmark{background:#fbd98d; color:#8a5306;}
+.fadd{position:absolute; z-index:2; border:2px dashed #88a7ae; border-radius:6px; background:#f8fbfb; color:var(--sub); display:flex; align-items:center; justify-content:center; font-size:13.5px;}
+.fadd.drop-ready{border-color:var(--amber); background:var(--amber-l); color:#8b530e;}
+.bdg{position:absolute; z-index:3; font-size:11px; color:#fff; padding:2px 10px; border-radius:99px; font-weight:700;}
+.bdg.cond{background:var(--amber);}
+.bdg.body{background:var(--indigo);}
+.on{filter:drop-shadow(0 0 6px rgba(79,110,247,.9));}
+.on.met{filter:drop-shadow(0 0 8px rgba(239,68,68,.95));}
+.on.go{filter:drop-shadow(0 0 8px rgba(34,197,94,.95));}
+
+/* popover */
+#pop{position:fixed; z-index:60; background:#fff; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,.18); padding:10px; display:flex; flex-direction:column; gap:6px; min-width:150px;}
+#pop button{text-align:left; background:var(--bg); border-radius:9px; padding:9px 12px; font-size:14px; font-weight:600; color:var(--ink); border:1.5px solid var(--line);}
+#pop button:hover{border-color:var(--indigo); color:var(--indigo);}
+#pop button.cur{border-color:var(--indigo); color:var(--indigo); background:var(--indigo-l);}
+#pop .rowbtns{display:flex; gap:6px;}
+#pop .rowbtns button{flex:1; text-align:center;}
+
+/* 弹窗 */
+#modal{position:fixed; inset:0; background:rgba(23,30,54,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px;}
+.mcard{background:#fff; border-radius:18px; max-width:460px; width:100%; padding:22px; box-shadow:0 20px 60px rgba(0,0,0,.25); max-height:88vh; overflow:auto;}
+.mcard .memoji{font-size:42px; text-align:center;}
+.mcard h3{text-align:center; margin:4px 0; font-size:21px;}
+.mcard .mstars{text-align:center; font-size:25px; letter-spacing:3px; color:#f5b301; margin:2px 0 6px;}
+.mcard .mreason{font-size:14.5px; line-height:1.7; background:var(--bg); border-radius:10px; padding:10px 12px; margin:8px 0;}
+.mcard .mxq{display:flex; gap:10px; background:var(--amber-l); border-radius:10px; padding:10px 12px; font-size:13.5px; line-height:1.6; color:#7c4a03;}
+.mcard table{width:100%; border-collapse:collapse; font-size:13.5px; margin:8px 0;}
+.mcard th,.mcard td{border:1.5px solid var(--line); padding:5px 8px; text-align:center;}
+.mcard th{background:var(--indigo-l);}
+.mbtns{display:flex; gap:10px; margin-top:12px; justify-content:center; flex-wrap:wrap;}
+
+@media (max-width:900px){ .main{flex-direction:column;} .left,.right{width:100%;} }
+@media (max-width:480px){#game{padding:10px 8px}.topbar h2{font-size:17px}.boardwrap{padding:10px}.moonbg{justify-content:flex-start}.mission{padding:10px}.ansline{flex-direction:column;gap:3px}.acard{padding:15px}}
+</style>
+</head>
+<body>
+
+<div id="home">
+  <div class="hero">
+    <h1>🛸 月球巡逻大挑战</h1>
+    <p>月球上的小玉兔巡视器，离地球太远，没法一步步遥控——它要靠<b>循环</b>，自己反复做一套动作。</p>
+    <p>四个任务，从建立通信到水冰采样、绕坑巡检。观察<b>先判断再执行</b>与<b>先执行后判断</b>，让小玉兔在正确的时机停下。</p>
+  </div>
+  <div class="levels" id="lvgrid"></div>
+  <div class="homefoot">
+    <p>情境参考嫦娥七号月球南极探测任务 ｜ 下节课：把流程图变成编程积木</p>
+    <button onclick="resetProgress()">清除全部闯关进度</button>
+  </div>
+</div>
+
+<div id="game" class="hidden">
+  <div class="topbar">
+    <button class="back" onclick="goHome()">← 关卡总览</button>
+    <h2 id="gname"></h2>
+    <span class="goal" id="ggoal"></span>
+  </div>
+  <div class="levelnav" id="levelnav"></div>
+  <div class="mission"><div class="scene" id="scene"></div><div class="task" id="task"></div></div>
+  <div class="main">
+    <div class="left">
+      <div class="hintcard">
+        <div class="hh">
+          <span class="htitle">🧭 分步提示</span>
+          <span class="hstep" id="hStepNum"></span>
+          <span class="hdots" id="hDots"></span>
+          <button class="hmin" id="hToggleBtn" onclick="hintToggle()">收起</button>
+        </div>
+        <div id="hBody">
+          <div class="hmain" id="hText"></div>
+          <div class="hbtns">
+            <button id="hPrevBtn" onclick="hintPrev()">← 上一步</button>
+            <button id="hNextBtn" onclick="hintNext()">下一步 →</button>
+            <button class="ansbtn" onclick="showAnswer()">📖 看标准答案</button>
+          </div>
+        </div>
+      </div>
+      <div class="boardwrap">
+        <div class="moonbg"><div id="board"></div></div>
+        <div class="statusbar">
+          <span class="chip" id="stIter">第 0 轮</span>
+          <span class="chip" id="stStep">第 0 步</span>
+          <span class="chip" id="stDir">朝向：东</span>
+          <span class="chip hidden" id="stTurn">转弯：0次</span>
+          <span class="chip hidden" id="stScan">扫描：未开始</span>
+        </div>
+        <div class="battwrap">
+          <span class="blabel">🔋 电量</span>
+          <div class="segs" id="batt"></div>
+        </div>
+        <div class="runrow">
+          <button class="bigbtn" id="runBtn" onclick="toggleRun()">▶ 开始模拟</button>
+          <button class="ghostbtn" onclick="resetBoard()" title="复位地图">↺ 复位</button>
+          <div class="speedseg">
+            <button id="sp1" class="on" onclick="setSpeed(650)">🐢</button>
+            <button id="sp2" onclick="setSpeed(280)">🐇</button>
+          </div>
+        </div>
+        <div class="phase" id="phase">等待运行</div>
+        <div class="readout">
+          <h3>运行轨迹</h3><div class="trace" id="trace">尚未运行</div>
+          <div class="compare" id="compare"></div>
+          <div class="compare-note" id="compareNote"></div>
+        </div>
+        <div class="xiaoqi">
+          <div class="avatar">🤖</div>
+          <div style="flex:1">
+            <div class="bubble" id="xqText"></div>
+            <button class="askbtn" onclick="askXQ()">💡 提示</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="designer">
+        <div class="condrow"><label for="condSelect">循环停止条件</label><select id="condSelect" onchange="changeCond(this.value)"></select></div>
+        <div class="timerow">
+          <span class="lab">检查时机</span>
+          <button class="timepill" id="tp_pre" onclick="setTiming('pre')">先判断，再执行</button>
+          <button class="timepill" id="tp_post" onclick="setTiming('post')">先执行，再判断</button>
+        </div>
+        <div class="palette"><strong>动作积木</strong><div id="paletteBlocks" style="display:flex;gap:8px;flex-wrap:wrap"></div></div>
+        <div class="flowwrap"><div id="flow"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="ansModal" class="hidden">
+  <div class="acard">
+    <h3 id="ansTitle"></h3>
+    <div id="ansBox"></div>
+    <div class="mbtns">
+      <button class="ghostbtn" onclick="closeAns()">我先自己试</button>
+      <button class="bigbtn" onclick="fillAns()">👀 填入并看流程图</button>
+      <button class="bigbtn" onclick="fillRun()" style="background:var(--green);box-shadow:0 6px 16px rgba(34,197,94,.35);">▶ 填入并跑一遍</button>
+    </div>
+  </div>
+</div>
+
+<div id="pop" class="hidden"></div>
+
+<div id="modal" class="hidden">
+  <div class="mcard">
+    <div class="memoji" id="mEmoji"></div>
+    <h3 id="mTitle"></h3>
+    <div class="mstars" id="mStars"></div>
+    <div class="mreason" id="mReason"></div>
+    <div id="mExtra"></div>
+    <div class="mxq"><span>🤖</span><span id="mXQ"></span></div>
+    <div class="mbtns">
+      <button class="ghostbtn" onclick="closeModal()">继续调整</button>
+      <button class="bigbtn" id="mRetry" onclick="closeModal();resetBoard()">↺ 再试一次</button>
+      <button class="ghostbtn" id="mAnsBtn" onclick="closeModal();showAnswer()">📖 看标准答案</button>
+      <button class="bigbtn" id="mGo" onclick="nextLevel()" style="background:var(--green);box-shadow:0 6px 16px rgba(34,197,94,.35);"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var DIRS=[{dx:1,dy:0,name:"东"},{dx:0,dy:1,name:"南"},{dx:-1,dy:0,name:"西"},{dx:0,dy:-1,name:"北"}];
+var TURNS={left:3,right:1};
+var CONDL={camp:"到达营地？",battery:"电量不足？",home:"回到出发点？",ice:"本轮扫描到水冰？"};
+var BLOCKS={
+  fwd:{label:"前进 1 格"},
+  pulse:{io:true,label:"发送位置脉冲"},
+  left:{label:"左转 90°"},
+  right:{label:"右转 90°"},
+  if_left:{decide:true,label:"前方危险则左转 90°"},
+  scan:{io:true,label:"扫描当前样点"},
+  advance:{label:"沿路线去下一站"}
+};
+var LEVELS=[
+ {id:"l1",name:"第1关 · 建立中继通信",short:"中继通信",icon:"📡",
+  story:"沿月面直路铺设位置脉冲。",scene:"小玉兔从月面基地出发，沿一条安全直路前往中继塔。每走到一个新格子，都要先前进，再发送一次位置脉冲，地面才能知道它走到了哪里。",
+  task:"任务：到达中继塔并完成沿途通信。请按“前进 → 发送位置脉冲”的顺序组成循环体。",goalText:"到达中继塔并完成通信",
+  cols:7,rows:1,start:{x:0,y:0,d:0},camp:{x:6,y:0},craters:[],battery:18,
+  blocks:["fwd","pulse","right"],conds:["camp","battery"],
+  hint:"每轮是两步：先走到新格子，再发送位置脉冲。到达中继塔后，下一次循环判断才会结束。",brief:"观察每轮的两步动作：移动和通信。",
+  starText:"完成任务得星；按正确顺序完成两步循环得三星。",
+  stars:function(r){return !r.win?0:(r.bodyLen===2&&r.timing==="pre"?3:2);},
+  steps:[{t:"找反复动作",d:"从基地到中继塔，每轮都会重复哪两步？"},{t:"排动作顺序",d:"先发送位置，还是先走到新格子？"},{t:"找停止条件",d:"到达中继塔后，循环在什么时候结束？"}],
+  ans:{cond:"camp",timing:"pre",body:["fwd","pulse"],why:"每轮先前进到新格子，再发送该位置的脉冲。到达中继塔后，下一次循环开始前判断“到达中继塔？”为是，循环结束。"}},
+
+ {id:"l2",name:"第2关 · 峡谷巡路",short:"峡谷巡路",icon:"↰",
+  story:"沿窄通道把采集数据送回左上方营地。",scene:"小玉兔刚在右下角作业平台完成采集，要沿绿色安全通道把数据送回左上营地。它当前车头朝东，正对作业区边界；红色格是陨石坑，地图外也不能走。",
+  task:"任务：拖入“前方危险则左转”和“前进1格”，沿绿色通道到营地。先预测：两块积木顺序放反会怎样？",goalText:"避开边界与陨石坑，到达营地",
+  cols:4,rows:3,start:{x:3,y:2,d:0},camp:{x:0,y:0},
+  craters:[{x:0,y:1},{x:1,y:1},{x:2,y:1},{x:0,y:2},{x:1,y:2},{x:2,y:2}],battery:14,
+  blocks:["if_left","fwd"],conds:["camp","battery"],
+  hint:"出发时车头朝东，前方是地图外。每轮要先检查前方，再决定是否左转，最后才前进。绿色通道还会在右上角拐一次弯。",brief:"先看起点朝向，再沿绿色格找去营地的路线。",
+  starText:"安全到营地得星；两块积木、两次转弯得三星。",
+  stars:function(r){return !r.win?0:(r.bodyLen===2&&r.turns===2?3:2);},
+  steps:[{t:"找安全路线",d:"从右下角出发，绿色通道先沿右侧向北，再沿上方向西。"},{t:"看起点朝向",d:"车头朝东，前方是界外；第一轮能直接前进吗？"},{t:"安排积木顺序",d:"检查前方与前进，哪块应放在循环体前面？"}],
+  ans:{cond:"camp",timing:"pre",body:["if_left","fwd"],why:"每轮先检查前方：若边界或陨石坑挡路，就左转，再前进。起点先转向北，右上角再转向西；走5格、转2次后到营地。若把“前进”放在检查前，第一轮就驶出右侧边界。"}},
+
+ {id:"l3",name:"第3关 · 寻找水冰",short:"寻找水冰",icon:"◈",
+  story:"从基地出发，沿折线逐站采样。",scene:"黄色格是基地，不是采样点。绿色的10个编号样点从基地向东、向北、再向西排列；水冰藏在其中一站，必须到样点扫描才有结果。",
+  task:"任务：每轮沿绿色路线去下一站，再扫描该站。扫描到水冰后停止，不再驶往下一站。",goalText:"扫描到水冰并停在该样点",
+  cols:6,rows:4,start:{x:0,y:3,d:0},camp:null,ice:{x:2,y:1},
+  samples:[{x:1,y:3},{x:2,y:3},{x:3,y:3},{x:4,y:3},{x:4,y:2},{x:4,y:1},{x:3,y:1},{x:2,y:1},{x:1,y:1},{x:0,y:1}],
+  craters:[{x:0,y:0},{x:2,y:0},{x:5,y:0},{x:0,y:2},{x:5,y:1},{x:1,y:2},{x:2,y:2},{x:5,y:3}],battery:20,
+  blocks:["advance","scan","fwd"],conds:["ice","battery"],
+  hint:"基地与绿色样点不同。每轮先到下一站，再扫描；首次扫描前还没有水冰检测结果。",brief:"从黄色基地出发，按编号走到绿色样点再扫描。",
+  compareText:"先判断时还没有任何扫描结果；先执行“到下一站→扫描”，才能根据本轮结果决定是否停止。",
+  starText:"找到水冰得星；按“去下一站→扫描”重复得三星。",
+  stars:function(r){return !r.win?0:(r.bodyLen===2&&r.timing==="post"?3:2);},
+  steps:[{t:"观察路线",d:"黄色基地不编号。绿色的1号到10号样点组成折线，途中有几个转弯？"},{t:"安排每轮动作",d:"想得到1号样点的数据，应该先到达它，还是在基地扫描？"},{t:"决定判断位置",d:"第一次扫描前，能回答“扫描到水冰？”吗？"}],
+  ans:{cond:"ice",timing:"post",body:["advance","scan"],why:"巡视器从基地出发，每轮先沿编号路线到下一样点，再扫描该站。扫描后的唯一判断是“本轮扫描到水冰？”：是就停，否就再走一轮。首次扫描前没有结果，不能先判断。"}},
+
+ {id:"l4",name:"第4关 · 绕坑一圈",short:"绕坑一圈",icon:"🛸",
+  story:"沿方形外圈巡逻，回到起点且朝向不变。",scene:"中间一格是陨石坑，外围八格组成安全路线。巡视器从左上角向东出发；每条边走两格，再向右转 90°。",
+  task:"任务：只绕一圈，回到出发位置和方向。数一数循环执行了几轮。",goalText:"沿外圈完成一圈",
+  cols:3,rows:3,start:{x:0,y:0,d:0},camp:null,craters:[{x:1,y:1}],battery:16,
+  blocks:["fwd","right","left"],conds:["home","battery"],
+  hint:"出发时“回到起点？”已经为真，但任务要求先走完一整圈。",brief:"观察每轮的两次前进和一次转向。",
+  compareText:"出发时“回到起点？”为真：先判断会零轮结束；先执行后判断才能完成一整圈。",
+  starText:"完成一圈得星；三块动作、四轮完成得三星。",
+  stars:function(r){return !r.win?0:(r.bodyLen===3&&r.iters===4?3:2);},
+  steps:[{t:"先看路线",d:"外围是一条正方形路线。每一轮需要走完一条边。"},{t:"再看起点",d:"“回到起点？”在还没出发时会得到什么答案？"},{t:"观察转弯",d:"每轮转过一个直角，四轮一共转了多少度？"}],
+  ans:{cond:"home",timing:"post",body:["fwd","fwd","right"],why:"先完成一轮“前进、前进、右转”，再判断是否回到起点。四轮各转 90°，共转 360°，刚好绕一圈。"}}
+];
+
+var cur=null, plan=null, running=false, runToken=0, speed=650, CS=64;
+var hIdx=0, hOpen=true;
+var sim={x:0,y:0,d:0,battery:0,iters:0,steps:0,moves:0,turns:0,scans:0,scanResult:null,visited:{}};
+var comparison={pre:null,post:null}, trace=[];
+
+function $(id){return document.getElementById(id);}
+function sleep(ms){return new Promise(function(res){setTimeout(res,ms);});}
+var PROGRESS_KEY="moonLoopStarsV7";
+function store(){try{return JSON.parse(localStorage.getItem(PROGRESS_KEY)||"{}");}catch(e){return {};}}
+function saveStars(lv,n){var s=store();if((s[lv]||0)<n){s[lv]=n;try{localStorage.setItem(PROGRESS_KEY,JSON.stringify(s));}catch(e){}}}
+window.resetProgress=function(){try{localStorage.removeItem(PROGRESS_KEY);}catch(e){}renderHome();};
+
+/* ---------- 主页 ---------- */
+function renderHome(){
+  var s=store(),g=$("lvgrid");g.innerHTML="";
+  LEVELS.forEach(function(lv){
+    var b=document.createElement("button");b.className="lvcard";
+    var st=s[lv.id]||0;
+    var starStr="★★★".substr(0,st)+"☆☆☆".substr(0,3-st);
+    b.innerHTML='<div class="lvname">'+lv.icon+" "+lv.name+'</div><div class="lvstory">'+lv.story+'</div><div class="stars">'+starStr+'</div><div style="font-size:12px;color:#9aa3b5;margin-top:4px">'+lv.starText+'</div>';
+    b.onclick=function(){openLevel(lv);};
+    g.appendChild(b);
+  });
+}
+
+/* ---------- 打开关卡 ---------- */
+function openLevel(lv){
+  if(running){running=false;runToken++;setRunBtn(false);}
+  cur=lv; hIdx=0; comparison={pre:null,post:null};
+  plan={cond:lv.conds[0],timing:"pre",body:[]};
+  $("home").classList.add("hidden");$("game").classList.remove("hidden");
+  $("gname").textContent=lv.icon+" "+lv.name;
+  $("ggoal").textContent="目标："+lv.goalText;
+  $("scene").textContent=lv.scene;
+  $("task").textContent=lv.task;
+  CS=Math.max(36,Math.min(lv.cols<=3?88:64,Math.floor(($("game").querySelector(".left").clientWidth-64-(lv.cols-1)*6)/lv.cols)));
+  buildBoard();buildBatt();updateTimingPills();renderConditionSelect();renderPalette();renderFlow();renderLevelNav();renderCompare();
+  $("xqText").innerHTML="<b>小七：</b>"+lv.brief;
+  renderHint();
+  resetBoard();
+}
+window.goHome=function(){running=false;runToken++;$("game").classList.add("hidden");$("home").classList.remove("hidden");if(location.hash)location.hash="";renderHome();};
+window.setTiming=function(t){if(running)return;plan.timing=t;updateTimingPills();renderFlow();resetBoard();};
+function updateTimingPills(){$("tp_pre").classList.toggle("on",plan.timing==="pre");$("tp_post").classList.toggle("on",plan.timing==="post");}
+function renderConditionSelect(){
+  var select=$("condSelect");select.innerHTML="";
+  cur.conds.forEach(function(id){var option=document.createElement("option");option.value=id;option.textContent=CONDL[id];select.appendChild(option);});
+  select.value=plan.cond;
+}
+window.changeCond=function(id){
+  if(running||cur.conds.indexOf(id)<0)return;
+  plan.cond=id;renderConditionSelect();clearCompare();renderFlow();resetBoard();
+};
+function renderLevelNav(){
+  var nav=$("levelnav"),stars=store();nav.innerHTML="";
+  LEVELS.forEach(function(lv,i){
+    var b=document.createElement("button");b.className=lv===cur?"active":"";
+    b.innerHTML="0"+(i+1)+" "+lv.short+'<span class="navstars">'+("★".repeat(stars[lv.id]||0))+"</span>";
+    b.onclick=function(){openLevel(lv);};nav.appendChild(b);
+  });
+}
+function renderCompare(){
+  var el=$("compare");el.innerHTML="";
+  el.classList.toggle("hidden",cur.id==="l1"||cur.id==="l2");
+  $("compareNote").classList.toggle("hidden",cur.id==="l1"||cur.id==="l2");
+  ["pre","post"].forEach(function(t){
+    var item=comparison[t],box=document.createElement("div");
+    var title=document.createElement("strong");title.textContent=t==="pre"?"先判断再执行":"先执行后判断";
+    var result=document.createElement("span");result.textContent=item?item.text:"尚未运行";
+    if(item)result.className=item.win?"success":"failure";
+    box.appendChild(title);box.appendChild(result);el.appendChild(box);
+  });
+  $("compareNote").textContent=comparison.pre&&comparison.post?(cur.compareText||""):"";
+}
+function clearCompare(){comparison={pre:null,post:null};renderCompare();}
+function renderPalette(){
+  var el=$("paletteBlocks");el.innerHTML="";
+  cur.blocks.forEach(function(id){
+    var block=document.createElement("button");block.type="button";block.className="palette-block";
+    var meta=BLOCKS[id];block.textContent=(meta.decide?"◇ ":meta.io?"▱ ":"▭ ")+meta.label;
+    block.title="拖到循环体的虚线框";
+    block.onpointerdown=function(e){startDrag(e,id,block);};
+    block.onkeydown=function(e){if(e.key==="Enter"||e.key===" "){e.preventDefault();appendBlock(id);}};
+    el.appendChild(block);
+  });
+}
+function appendBlock(id){
+  if(running)return;
+  if(plan.body.length>=8){alert("循环体最多放 8 块");return;}
+  plan.body.push(id);clearCompare();renderFlow();resetBoard();
+}
+function startDrag(e,id,source){
+  if(running||e.button!==0)return;
+  e.preventDefault();source.setPointerCapture(e.pointerId);
+  var ghost=source.cloneNode(true);ghost.classList.add("drag-ghost");document.body.appendChild(ghost);
+  function move(ev){
+    ghost.style.left=(ev.clientX+12)+"px";ghost.style.top=(ev.clientY+12)+"px";
+    var target=$("addBtn"),r=target.getBoundingClientRect();
+    target.classList.toggle("drop-ready",ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom);
+  }
+  function end(ev){
+    var target=$("addBtn"),r=target.getBoundingClientRect();
+    var landed=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+    source.removeEventListener("pointermove",move);source.removeEventListener("pointerup",end);source.removeEventListener("pointercancel",cancel);
+    target.classList.remove("drop-ready");ghost.remove();if(landed)appendBlock(id);
+  }
+  function cancel(){source.removeEventListener("pointermove",move);source.removeEventListener("pointerup",end);source.removeEventListener("pointercancel",cancel);ghost.remove();$("addBtn").classList.remove("drop-ready");}
+  source.addEventListener("pointermove",move);source.addEventListener("pointerup",end);source.addEventListener("pointercancel",cancel);move(e);
+}
+
+/* ---------- 分步提示（左栏） ---------- */
+function renderHint(){
+  if(!cur||!cur.steps||!cur.steps.length)return;
+  var S=cur.steps, s=S[hIdx]||S[0];
+  $("hStepNum").textContent="第 "+(hIdx+1)+" / "+S.length+" 步";
+  $("hText").innerHTML='<div class="hst">'+s.t+'</div><div class="hsd">'+s.d+'</div>';
+  var d="";for(var i=0;i<S.length;i++)d+='<i class="'+(i<=hIdx?"on":"")+'"></i>';
+  $("hDots").innerHTML=d;
+  $("hPrevBtn").disabled=(hIdx===0);
+  $("hNextBtn").textContent=(hIdx>=S.length-1)?"↺ 再看一遍":"下一步 →";
+  $("hToggleBtn").textContent=hOpen?"收起":"展开";
+  $("hBody").classList.toggle("hidden",!hOpen);
+}
+window.hintToggle=function(){hOpen=!hOpen;renderHint();};
+window.hintPrev=function(){if(hIdx>0){hIdx--;renderHint();}};
+window.hintNext=function(){if(!cur||!cur.steps)return;hIdx=(hIdx+1)%cur.steps.length;renderHint();};
+
+/* ---------- 标准答案 ---------- */
+window.showAnswer=function(){
+  if(!cur||!cur.ans){alert("这一关没有标准答案，大胆试吧！");return;}
+  var a=cur.ans;
+  var blocks=a.body.map(function(id){
+    var b=BLOCKS[id];
+    return '<span class="mini '+(b.decide?"dec":b.io?"io":"act")+'">'+(b.decide?"◇ ":b.io?"▱ ":"▭ ")+b.label+"</span>";
+  }).join('<span class="arrow">→</span>');
+  $("ansTitle").textContent=cur.icon+" "+cur.name+" · 标准答案";
+  $("ansBox").innerHTML=
+    '<div class="ansline"><span class="anslab">循环判断条件</span><span class="ansval">◇ '+CONDL[a.cond]+"</span></div>"+
+    '<div class="ansline"><span class="anslab">检查时机</span><span class="ansval">'+(a.timing==="pre"?"先判断，再执行":"先执行，再判断")+"</span></div>"+
+    '<div class="ansline" style="align-items:flex-start"><span class="anslab">循环体（按顺序）</span><div class="ansblocks">'+blocks+"</div></div>"+
+    '<div class="answhy">💡 '+a.why+"</div>";
+  $("ansModal").classList.remove("hidden");
+};
+window.closeAns=function(){$("ansModal").classList.add("hidden");};
+window.fillAns=function(){
+  if(running||!cur||!cur.ans)return;
+  var a=cur.ans;
+  plan.cond=a.cond;plan.timing=a.timing;plan.body=a.body.slice();
+  clearCompare();updateTimingPills();renderConditionSelect();renderFlow();resetBoard();window.closeAns();
+};
+window.fillRun=function(){if(running||!cur||!cur.ans)return;window.fillAns();return doRun();};
+
+/* ---------- 棋盘 ---------- */
+function sampleIndex(x,y){
+  if(!cur.samples)return -1;
+  for(var i=0;i<cur.samples.length;i++)if(cur.samples[i].x===x&&cur.samples[i].y===y)return i;
+  return -1;
+}
+function buildBoard(){
+  var bd=$("board");bd.innerHTML="";
+  bd.style.setProperty("--cs",CS+"px");
+  bd.style.gridTemplateColumns="repeat("+cur.cols+","+CS+"px)";
+  bd.style.gridTemplateRows="repeat("+cur.rows+","+CS+"px)";
+  bd.style.marginRight=cur.id==="l2"?(CS+12)+"px":"0";
+  for(var y=0;y<cur.rows;y++)for(var x=0;x<cur.cols;x++){
+    var c=document.createElement("div");c.className="cell";c.id="c"+x+"_"+y;
+    if(cur.craters.some(function(k){return k.x===x&&k.y===y;}))c.classList.add("crater");
+    if(cur.camp&&cur.camp.x===x&&cur.camp.y===y)c.classList.add("camp");
+    if((cur.id==="l1"||cur.id==="l4")&&!c.classList.contains("crater"))c.classList.add("route");
+    if(cur.id==="l2"&&(x===3||y===0)&&!c.classList.contains("crater"))c.classList.add("route");
+    var si=sampleIndex(x,y);
+    if(si>=0){c.classList.add("sample");c.dataset.sampleNumber=si+1;c.textContent=(si+1)+"号待测";c.title="第"+(si+1)+"号样点：待测";}
+    if(cur.start.x===x&&cur.start.y===y){c.classList.add("start");c.textContent=cur.id==="l3"?"基地":"起点";if(cur.id==="l3")c.title="出发基地：不是采样点";}
+    else if(c.classList.contains("camp"))c.textContent="营地";
+    else if(c.classList.contains("crater"))c.textContent="危险";
+    bd.appendChild(c);
+  }
+  if(cur.id==="l2"){
+    var outside=document.createElement("div");outside.id="outsideMarker";outside.className="outside-marker";
+    outside.textContent="地图外";outside.style.left=cur.cols*(CS+6)+"px";
+    outside.style.top=cur.start.y*(CS+6)+"px";outside.style.width=CS+"px";outside.style.height=CS+"px";
+    bd.appendChild(outside);
+  }
+  var r=document.createElement("div");r.id="rover";
+  r.style.width=CS+"px";r.style.height=CS+"px";
+  r.innerHTML='<div class="inner"><div class="badge">🐰</div><div class="face"></div></div>';
+  bd.appendChild(r);
+}
+function resetBoard(){
+  if(running){running=false;runToken++;setRunBtn(false);}
+  sim={x:cur.start.x,y:cur.start.y,d:cur.start.d,battery:cur.battery,iters:0,steps:0,moves:0,turns:0,scans:0,scanResult:null,pulses:0,pulseAtStart:0,visited:{}};
+  sim.visited[cur.start.x+"_"+cur.start.y]=1;
+  document.querySelectorAll(".cell.visited").forEach(function(c){c.classList.remove("visited");});
+  document.querySelectorAll(".cell.edge-hit").forEach(function(c){c.classList.remove("edge-hit");});
+  document.querySelectorAll(".cell.pulsed").forEach(function(c){c.classList.remove("pulsed");});
+  document.querySelectorAll(".cell.pulse-error").forEach(function(c){c.classList.remove("pulse-error");});
+  var outside=$("outsideMarker");if(outside)outside.classList.remove("hit");
+  document.querySelectorAll(".cell.sample").forEach(function(c){c.classList.remove("scanned","ice-found");c.textContent=c.dataset.sampleNumber+"号待测";c.title="第"+c.dataset.sampleNumber+"号样点：待测";});
+  var sc=$("c"+cur.start.x+"_"+cur.start.y);if(sc)sc.classList.add("visited");
+  placeRover();updateStatus();
+  document.querySelectorAll(".fnode,.fio,.fdec").forEach(function(n){n.classList.remove("on","met","go");});
+  trace=[];$("trace").textContent="尚未运行";$("phase").textContent="等待运行";$("phase").className="phase";
+}
+window.resetBoard=resetBoard;
+function placeRover(){
+  var r=$("rover");
+  r.style.transform="translate("+sim.x*(CS+6)+"px,"+sim.y*(CS+6)+"px)";
+  r.querySelector(".inner").style.transform="rotate("+sim.d*90+"deg)";
+}
+function updateStatus(){
+  $("stIter").textContent="第 "+sim.iters+" 轮";
+  $("stStep").textContent="第 "+sim.steps+" 步";
+  $("stDir").textContent="朝向："+DIRS[sim.d].name;
+  var turnChip=$("stTurn");turnChip.classList.toggle("hidden",cur.id!=="l2"&&cur.id!=="l4");
+  turnChip.textContent="转弯："+sim.turns+"次";
+  turnChip.classList.remove("warn");
+  $("stScan").classList.toggle("hidden",cur.id!=="l3");
+  $("stScan").textContent="扫描："+(sim.scanResult===null?"未开始":sim.scanResult?"发现水冰":"上次无信号")+"（"+sim.scans+" 次）";
+  buildBatt();
+}
+function buildBatt(){
+  var w=$("batt");w.innerHTML="";
+  var low=sim.battery<2;
+  for(var i=0;i<cur.battery;i++){
+    var s=document.createElement("div");s.className="seg"+(i<sim.battery?(low?" low":""):" off");
+    w.appendChild(s);
+  }
+}
+
+/* 标准流程图：起止框、处理框、判断菱形与带箭头的流程线。 */
+var FX={W:560,cx:280,retX:40,endX:482,padTop:30,decW:190,decH:96,actW:240,actH:44,termW:110,termH:40,gap:26,addW:200,addH:36};
+
+function renderFlow(){
+  var F=FX, f=$("flow");f.innerHTML="";
+  var y=F.padTop, nodes=[], wires=[], labels=[];
+  var condTop=0,condCy=0,condBot=0,condLX=0,condRX=0;
+  var bodyTop=0,prevBot=null;
+
+  nodes.push({kind:"term",label:"开始",x:F.cx,y:y,w:F.termW,h:F.termH});
+  var startY=y+F.termH; y=startY+F.gap;
+
+  function condNode(){
+    condTop=y;condCy=y+F.decH/2;condBot=y+F.decH;
+    condLX=F.cx-F.decW/2;condRX=F.cx+F.decW/2;
+    nodes.push({kind:"dec",cond:true,label:CONDL[plan.cond],x:F.cx,y:y,w:F.decW,h:F.decH,id:"condNode",badge:{cls:"cond",text:"循环判断条件"}});
+    wires.push({pts:[[condRX,condCy],[F.endX-F.termW/2,condCy]],arrow:true});
+    labels.push({x:condRX+18,y:condCy-8,t:"是"});
+    nodes.push({kind:"term",label:"结束",x:F.endX,y:condCy-F.termH/2,w:F.termW,h:F.termH});
+    y=condBot+F.gap;
+  }
+  if(plan.timing==="pre")condNode();
+  bodyTop=y;
+
+  // 循环体：块间用竖直流程线相连
+  plan.body.forEach(function(id,i){
+    var top=y;
+    if(prevBot!==null)wires.push({pts:[[F.cx,prevBot],[F.cx,top]],arrow:true});
+    if(BLOCKS[id].decide){
+      var join=top+128,branchX=456;
+      nodes.push({kind:"dec",label:"前方危险？",x:F.cx,y:top,w:F.decW,h:F.decH,id:"fn"+i});
+      nodes.push({kind:"act",label:"左转 90°",x:branchX,y:top+28,w:90,h:40});
+      wires.push({pts:[[F.cx+F.decW/2,top+48],[branchX-45,top+48]],arrow:true});
+      wires.push({pts:[[branchX,top+68],[branchX,join],[F.cx,join]],arrow:true});
+      wires.push({pts:[[F.cx,top+F.decH],[F.cx,join]],arrow:true});
+      labels.push({x:F.cx+F.decW/2+5,y:top+38,t:"是"});
+      labels.push({x:F.cx+8,y:top+111,t:"否"});
+      prevBot=join;y=join+F.gap;
+    }else{
+      nodes.push({kind:BLOCKS[id].io?"io":"act",label:BLOCKS[id].label,x:F.cx,y:top,w:F.actW,h:F.actH,id:"fn"+i});
+      prevBot=top+F.actH;y=prevBot+F.gap;
+    }
+  });
+  // 拖拽落点始终位于循环体末尾。
+  if(prevBot!==null)wires.push({pts:[[F.cx,prevBot],[F.cx,y]],arrow:true});
+  nodes.push({kind:"add",label:"拖入下一块动作",x:F.cx,y:y,w:F.addW,h:F.addH,id:"addBtn"});
+  prevBot=y+F.addH; y=prevBot;
+
+  // 循环体背景区
+  nodes.push({kind:"bodybg",x0:66,x1:528,top:bodyTop-14,bot:prevBot+12});
+
+  if(plan.timing==="post"){
+    wires.push({pts:[[F.cx,startY],[F.cx,bodyTop]],arrow:true});
+    wires.push({pts:[[F.cx,prevBot],[F.cx,prevBot+40]],arrow:true});
+    y=prevBot+40;
+    condNode();
+    wires.push({pts:[[F.cx,condBot],[F.cx,condBot+22],[F.retX,condBot+22],[F.retX,bodyTop-14],[66,bodyTop-14]],arrow:true,loop:true});
+    labels.push({x:F.cx+8,y:condBot+16,t:"否"});
+  }else{
+    wires.push({pts:[[F.cx,startY],[F.cx,condTop]],arrow:true});
+    wires.push({pts:[[F.cx,condBot],[F.cx,bodyTop]],arrow:true});
+    labels.push({x:F.cx+8,y:condBot+16,t:"否"});
+    wires.push({pts:[[F.cx,prevBot],[F.cx,prevBot+22],[F.retX,prevBot+22],[F.retX,condCy],[condLX,condCy]],arrow:true,loop:true});
+  }
+
+  // ---- 渲染 ----
+  var totalH=Math.max(y,condCy+F.termH/2,prevBot+44)+8;
+  f.style.height=totalH+"px";
+  var svg='<svg id="wires" width="'+F.W+'" height="'+totalH+'">'+
+    '<defs><marker id="ah" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#64748b"/></marker>'+
+    '<marker id="ahv" markerWidth="9" markerHeight="8" refX="7.5" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#8b5cf6"/></marker></defs>';
+  wires.forEach(function(w){
+    var d="M"+w.pts.map(function(p){return p[0]+" "+p[1];}).join(" L ");
+    svg+='<path class="wire'+(w.loop?" wloop":"")+'" d="'+d+'"'+(w.arrow?(' marker-end="url(#'+(w.loop?"ahv":"ah")+'")'):"")+'/>';
+  });
+  labels.forEach(function(l){ svg+='<text class="wlabel" x="'+l.x+'" y="'+l.y+'">'+l.t+"</text>"; });
+  svg+="</svg>";
+  f.innerHTML=svg;
+
+  nodes.forEach(function(n){
+    var el;
+    if(n.kind==="bodybg"){
+      el=document.createElement("div");el.className="fbodybg";
+      el.style.left=n.x0+"px";el.style.top=n.top+"px";el.style.width=(n.x1-n.x0)+"px";el.style.height=(n.bot-n.top)+"px";
+      var bd=document.createElement("div");bd.className="bdg body";bd.textContent="循环体";
+      // 徽章与背景区同为 #flow 的绝对定位子元素，必须用背景区自身的坐标
+      bd.style.left=(n.x0+10)+"px";bd.style.top=(n.top-11)+"px";
+      f.appendChild(el);f.appendChild(bd);
+      return;
+    }
+    if(n.kind==="dec"){
+      el=document.createElement("div");el.className="fdec"+(n.cond?" decmark":"");el.id=n.id;
+      el.style.left=n.x-n.w/2+"px";el.style.top=n.y+"px";el.style.width=n.w+"px";el.style.height=n.h+"px";
+      el.textContent=n.label;
+      if(n.cond)el.title="选择循环停止条件";
+      if(n.badge){var g=document.createElement("div");g.className="bdg "+n.badge.cls;g.textContent=n.badge.text;
+        g.style.left=(n.x-F.decW/2-4)+"px";g.style.top=(n.y-24)+"px";f.appendChild(g);}
+    }else if(n.kind==="io"){
+      el=document.createElement("div");el.className="fio";el.id=n.id;
+      el.style.left=n.x-n.w/2+"px";el.style.top=n.y+"px";el.style.width=n.w+"px";el.style.height=n.h+"px";
+      var text=document.createElement("span");text.textContent=n.label;el.appendChild(text);
+    }else if(n.kind==="add"){
+      el=document.createElement("div");el.className="fadd";el.id=n.id;
+      el.style.left=n.x-n.w/2+"px";el.style.top=n.y+"px";el.style.width=n.w+"px";el.style.height=n.h+"px";
+      el.textContent=n.label;
+    }else{
+      el=document.createElement("div");el.className="fnode "+n.kind;
+      if(n.id)el.id=n.id;
+      el.style.left=n.x-n.w/2+"px";el.style.top=n.y+"px";el.style.width=n.w+"px";el.style.height=n.h+"px";
+      el.textContent=n.label;
+      if(n.label==="结束"||n.label==="开始")el.style.cursor="default";
+    }
+    f.appendChild(el);
+  });
+
+  // 交互绑定
+  var cn=$("condNode");
+  if(cn)cn.onclick=function(e){e.stopPropagation();if(!running)showPop(cn,[{t:"循环判断条件",header:true}].concat(cur.conds.map(function(c){return {t:CONDL[c].replace("？",""),cond:c};})),function(p){if(p.cond)window.changeCond(p.cond);});};
+  plan.body.forEach(function(id,i){
+    var el=$("fn"+i);if(!el)return;
+    el.onclick=function(e){e.stopPropagation();if(running)return;
+      showPop(el,[{t:"上移 ↑",mv:-1},{t:"下移 ↓",mv:1},{t:"删除 ✕",del:true}],function(p){
+        if(p.del){plan.body.splice(i,1);}
+        else if(p.mv){var j=i+p.mv;if(j<0||j>=plan.body.length)return;var t=plan.body[i];plan.body[i]=plan.body[j];plan.body[j]=t;}
+        clearCompare();renderFlow();resetBoard();
+      });};
+  });
+}
+window.setSpeed=function(ms){speed=ms;$("sp1").classList.toggle("on",ms===650);$("sp2").classList.toggle("on",ms===280);};
+
+/* popover */
+function hidePop(){$("pop").classList.add("hidden");}
+function showPop(anchor,items,onPick){
+  var p=$("pop");p.innerHTML="";
+  items.forEach(function(it){
+    if(it.header){var h=document.createElement("div");h.style.cssText="font-size:12px;color:#6b7280;font-weight:700;padding:0 2px";h.textContent=it.t;p.appendChild(h);return;}
+    var b=document.createElement("button");
+    if(it.cond)b.className=plan.cond===it.cond?"cur":"";
+    b.textContent=it.t;
+    b.onclick=function(e){e.stopPropagation();hidePop();onPick(it);};
+    p.appendChild(b);
+  });
+  var r=anchor.getBoundingClientRect();
+  p.classList.remove("hidden");
+  var pw=p.offsetWidth,ph=p.offsetHeight;
+  var x=Math.min(r.left,window.innerWidth-pw-10);
+  var y=r.bottom+6;if(y+ph>window.innerHeight-10)y=r.top-ph-6;
+  p.style.left=Math.max(8,x)+"px";p.style.top=Math.max(8,y)+"px";
+}
+document.addEventListener("click",function(e){if(!$("pop").contains(e.target))hidePop();});
+
+/* ---------- 运行引擎 ---------- */
+function inside(x,y){return x>=0&&x<cur.cols&&y>=0&&y<cur.rows;}
+function isCrater(x,y){return cur.craters.some(function(k){return k.x===x&&k.y===y;});}
+function condMet(){
+  if(plan.cond==="camp")return !!cur.camp&&sim.x===cur.camp.x&&sim.y===cur.camp.y;
+  if(plan.cond==="ice")return sim.scanResult;
+  if(plan.cond==="battery")return sim.battery<2;
+  return sim.x===cur.start.x&&sim.y===cur.start.y&&sim.d===cur.start.d;
+}
+window.toggleRun=function(){if(running)resetBoard();else doRun();};
+function setRunBtn(on){$("runBtn").textContent=on?"■ 停止":"▶ 开始模拟";$("runBtn").classList.toggle("stop",on);}
+function flash(nodeId,cls){var n=$(nodeId);if(n){n.classList.add("on");if(cls)n.classList.add(cls);}}
+function unflash(nodeId){var n=$(nodeId);if(n)n.classList.remove("on","met","go");}
+function logStep(line){trace.push(line);var el=$("trace");el.textContent=trace.join("\n");el.scrollTop=el.scrollHeight;}
+function setPhase(kind,line){$("phase").className="phase "+kind;$("phase").textContent=line;}
+
+async function doRun(){
+  if(!plan.body.length){showModal(false,"empty",0);return;}
+  resetBoard();hidePop();
+  running=true;var token=++runToken;setRunBtn(true);
+  var stop=null,stall=0,lastSig="";
+  async function doBlock(i){
+    var id=plan.body[i];
+    setPhase("act","第 "+sim.iters+" 轮：执行「"+BLOCKS[id].label+"」");
+    flash("fn"+i);await sleep(speed*.7);if(token!==runToken)return true;
+    if(sim.battery<=0){stop="noPower";logStep("电量耗尽");unflash("fn"+i);return false;}
+    sim.battery--;sim.steps++;
+    if(id==="fwd"){
+      var nx=sim.x+DIRS[sim.d].dx,ny=sim.y+DIRS[sim.d].dy;
+      if(!inside(nx,ny)){
+        stop="out";var edge=$("c"+sim.x+"_"+sim.y);if(edge)edge.classList.add("edge-hit");
+        var outside=$("outsideMarker");
+        if(outside){outside.classList.add("hit");$("rover").style.transform="translate("+nx*(CS+6)+"px,"+ny*(CS+6)+"px)";}
+        updateStatus();
+        logStep("第 "+sim.iters+" 轮：从红框格向"+DIRS[sim.d].name+"前进，越过地图边界");
+        await sleep(speed*.7);unflash("fn"+i);return false;
+      }
+      sim.moves++;
+      sim.x=nx;sim.y=ny;
+      var c=$("c"+nx+"_"+ny);if(c)c.classList.add("visited");
+      sim.visited[nx+"_"+ny]=1;
+      placeRover();updateStatus();
+      logStep("第 "+sim.iters+" 轮：朝"+DIRS[sim.d].name+"走到第 "+(nx+1)+" 列"+(cur.rows>1?"第 "+(ny+1)+" 行":"")+(cur.camp&&nx===cur.camp.x&&ny===cur.camp.y?"（营地）":""));
+      if(isCrater(nx,ny)){stop="crash";logStep("坠入陨石坑");unflash("fn"+i);return false;}
+    }else if(id==="if_left"){
+      var frontX=sim.x+DIRS[sim.d].dx,frontY=sim.y+DIRS[sim.d].dy;
+      var risk=!inside(frontX,frontY)?"地图边界":isCrater(frontX,frontY)?"陨石坑":null;
+      var danger=!!risk;
+      if(danger){sim.turns++;sim.d=(sim.d+3)%4;placeRover();}
+      updateStatus();logStep("第 "+sim.iters+" 轮：前方"+(danger?"是"+risk+"，左转向":"安全，保持朝向")+DIRS[sim.d].name);
+    }else if(id==="pulse"){
+      sim.pulses++;
+      if(sim.moves===0)sim.pulseAtStart++;
+      var pulseCell=$("c"+sim.x+"_"+sim.y);if(pulseCell)pulseCell.classList.add("pulsed");
+      updateStatus();logStep("第 "+sim.iters+" 轮：在第 "+(sim.x+1)+" 格发送位置脉冲");
+      if(cur.id==="l1"&&sim.moves===0){if(pulseCell)pulseCell.classList.add("pulse-error");stop="badPulse";logStep("还没有前进，发送的是基地位置");unflash("fn"+i);return false;}
+    }else if(id==="scan"){
+      var scannedIndex=sampleIndex(sim.x,sim.y);
+      if(scannedIndex<0){stop="notSample";logStep("当前位置不是待测样点");unflash("fn"+i);return false;}
+      sim.scans++;sim.scanResult=!!cur.ice&&sim.x===cur.ice.x&&sim.y===cur.ice.y;
+      var sample=$("c"+sim.x+"_"+sim.y);
+      if(sample&&sample.classList.contains("sample")){
+        sample.classList.add("scanned");
+        if(sim.scanResult)sample.classList.add("ice-found");
+        sample.textContent=(scannedIndex+1)+"号"+(sim.scanResult?"水冰":"无信号");
+        sample.title="第"+(scannedIndex+1)+"号样点："+(sim.scanResult?"发现水冰":"无信号");
+      }
+      updateStatus();logStep("第 "+sim.iters+" 轮：扫描"+(sim.scanResult?"发现水冰":"无信号"));
+    }else if(id==="advance"){
+      var routeIndex=sampleIndex(sim.x,sim.y);
+      var atBase=sim.x===cur.start.x&&sim.y===cur.start.y;
+      if((routeIndex<0&&!atBase)||routeIndex===cur.samples.length-1){stop="routeEnd";logStep("已到路线终点，仍未发现水冰");unflash("fn"+i);return false;}
+      var next=cur.samples[routeIndex+1],dx=next.x-sim.x,dy=next.y-sim.y;
+      for(var newDir=0;newDir<DIRS.length;newDir++)if(DIRS[newDir].dx===dx&&DIRS[newDir].dy===dy)break;
+      if(newDir===DIRS.length){stop="routeEnd";unflash("fn"+i);return false;}
+      if(sim.d!==newDir){sim.turns++;sim.d=newDir;}
+      sim.x=next.x;sim.y=next.y;sim.moves++;
+      sim.visited[sim.x+"_"+sim.y]=1;
+      var nextCell=$("c"+sim.x+"_"+sim.y);if(nextCell)nextCell.classList.add("visited");
+      placeRover();updateStatus();logStep("沿路线到第 "+(routeIndex+2)+" 号样点，朝向"+DIRS[sim.d].name);
+    }else{
+      sim.turns++;
+      sim.d=(sim.d+TURNS[id])%4;placeRover();updateStatus();
+      logStep("第 "+sim.iters+" 轮：转向"+DIRS[sim.d].name);
+    }
+    unflash("fn"+i);
+    await sleep(speed*.6);
+    return token===runToken;
+  }
+  while(token===runToken){
+    if(plan.timing==="pre"){
+      var met=await flashCheck(token);if(token!==runToken)return;
+      if(met===null){stop="noData";break;}
+      if(met){stop="cond";break;}
+    }
+    sim.iters++;updateStatus();
+    var sig=sim.x+","+sim.y+","+sim.d+","+sim.battery;
+    stall=(sig===lastSig)?stall+1:0;lastSig=sig;
+    if(sim.iters>60||stall>=8){stop="endless";break;}
+    var broke=false;
+    for(var i=0;i<plan.body.length;i++){
+      var ok=await doBlock(i);
+      if(token!==runToken)return;
+      if(!ok){broke=true;break;}
+    }
+    if(broke)break;
+    if(plan.timing==="post"){
+      var met2=await flashCheck(token);if(token!==runToken)return;
+      if(met2===null){stop="noData";break;}
+      if(met2){stop="cond";break;}
+    }
+  }
+  if(token!==runToken)return;
+  running=false;setRunBtn(false);
+  var win=evalGoal(stop);
+  var st=cur.stars({win:win,stop:stop,bodyLen:plan.body.length,cond:plan.cond,timing:plan.timing,iters:sim.iters,steps:sim.steps,turns:sim.turns,moves:sim.moves,pulses:sim.pulses,pulseAtStart:sim.pulseAtStart});
+  comparison[plan.timing]={win:win,text:resultSummary(win,stop)};renderCompare();
+  setPhase(win?"act":"check",win?"任务完成":"模拟结束："+resultSummary(win,stop));
+  if(win){saveStars(cur.id,st);renderLevelNav();}
+  showModal(win,stop,st);
+}
+async function flashCheck(token){
+  var met=condMet();
+  var answer=met===null?"未知，尚无扫描数据":met?"是，停止":"否，继续";
+  setPhase("check","第 "+sim.iters+" 轮：判断「"+CONDL[plan.cond]+"」→ "+answer);
+  logStep("判断"+(met===null?"未知":met?"是":"否"));
+  flash("condNode",met===null?"":met?"met":"go");
+  $("stIter").textContent="第 "+sim.iters+" 轮 ｜ "+(met===null?"无数据":met?"停！":"继续");
+  await sleep(speed*.8);
+  unflash("condNode");
+  return met;
+}
+function evalGoal(stop){
+  if(stop!=="cond")return false;
+  if(cur.id==="l1")return plan.cond==="camp"&&plan.timing==="pre"&&sim.x===cur.camp.x&&sim.y===cur.camp.y&&sim.moves===6&&sim.pulses===6&&sim.pulseAtStart===0&&plan.body.length===2&&plan.body[0]==="fwd"&&plan.body[1]==="pulse";
+  if(cur.id==="l2")return plan.cond==="camp"&&sim.x===cur.camp.x&&sim.y===cur.camp.y&&sim.moves===5&&sim.turns===2;
+  if(cur.id==="l3"){
+    var iceIndex=sampleIndex(cur.ice.x,cur.ice.y);
+    return plan.cond==="ice"&&iceIndex>=0&&sim.scanResult===true&&sim.x===cur.ice.x&&sim.y===cur.ice.y&&sim.scans>=iceIndex+1&&sim.moves===iceIndex+1;
+  }
+  if(cur.id==="l4"){
+    var ring=0;for(var x=0;x<cur.cols;x++)for(var y=0;y<cur.rows;y++){if(!isCrater(x,y)&&sim.visited[x+"_"+y])ring++;}
+    return plan.cond==="home"&&sim.x===cur.start.x&&sim.y===cur.start.y&&sim.d===cur.start.d&&ring===8&&sim.moves===8&&sim.turns===4&&sim.iters===4;
+  }
+  return !!cur.camp&&sim.x===cur.camp.x&&sim.y===cur.camp.y;
+}
+function resultSummary(win,stop){
+  if(win){
+    if(cur.id==="l1")return "到达中继塔并完成6次位置通信";
+    if(cur.id==="l2")return "沿通道到达营地（5格、2次转弯）";
+    if(cur.id==="l3")return "扫描到水冰（第 "+sim.scans+" 个样点）";
+    if(cur.id==="l4")return "完成一圈（4轮）";
+    return "到达营地（"+sim.iters+"轮）";
+  }
+  if(stop==="crash")return "坠入陨石坑（"+sim.iters+"轮）";
+  if(stop==="badPulse")return "位置脉冲发早了：还没有前进到新格子";
+  if(stop==="cond"&&cur.id==="l2"&&plan.cond!=="camp")return "停止条件应选“到达营地？”";
+  if(stop==="cond"&&sim.iters===0)return "原地停止（0轮）";
+  if(stop==="out")return "越过地图边界";
+  if(stop==="notSample")return "当前位置不是待测样点";
+  if(stop==="routeEnd")return "走完全部样点，仍未发现水冰";
+  if(stop==="noData")return "尚无扫描数据，无法判断";
+  if(stop==="cond"&&cur.id==="l3"&&sim.scanResult===true&&(sim.x!==cur.ice.x||sim.y!==cur.ice.y))return "发现水冰后又离开了样点";
+  if(stop==="noPower")return "电量耗尽，任务未完成";
+  return "未完成任务（"+sim.iters+"轮）";
+}
+
+/* ---------- 结果 ---------- */
+function showModal(win,stop,st){
+  var m=$("modal");m.classList.remove("hidden");
+  $("mEmoji").textContent=win?"🎉":"💪";
+  $("mTitle").textContent=win?"任务完成！":"再看一次运行顺序";
+  $("mStars").textContent="★".repeat(win?st:0)+"☆".repeat(3-(win?st:0));
+  var R={
+    crash:"掉进陨石坑了！",
+    out:"冲出了巡视区！",
+    noPower:"电量用完，停在了半路。",
+    badPulse:"位置脉冲发早了：请先前进到新格子。",
+    notSample:"当前位置不是采样点；从基地应先沿路线到1号样点。",
+    routeEnd:"已走完全部样点，仍未发现水冰。请检查扫描和前进的顺序。",
+    noData:"还没有扫描样点，不能判断是否发现水冰。",
+    endless:"小车跑个不停——停止条件一直没发生！",
+    empty:"循环体还是空的。",
+    cond:"循环停了，但任务没完成。"
+  };
+  var r=win?resultSummary(win,stop):R[stop]||"";
+  if(!win&&cur.id==="l2"&&stop==="out")r="起点朝东，前方就是地图外。先执行“前进1格”会越界；把“前方危险则左转”放在前进之前。";
+  if(!win&&cur.id==="l1"&&stop==="badPulse")r="每轮应先到达新格子，再发送位置脉冲；基地位置不能算作第一条沿途记录。";
+  if(!win&&stop==="cond"){
+    if(cur.id==="l2")r="循环停下了，但没有按绿色通道走完5格、转过2次弯。检查积木顺序和停止条件。";
+    if(cur.id==="l3"&&sim.scanResult===true&&(sim.x!==cur.ice.x||sim.y!==cur.ice.y))r="发现水冰后又离开了样点。每轮应先到下一站，再扫描并判断。";
+    if(cur.id==="l4"&&sim.iters===0)r="一检查就发现「已经回到出发点」，小车一步都没走！";
+  }
+  var extra="";
+  if(win){
+    if(cur.id==="l1")extra="每轮先前进，再发送位置脉冲；共完成6次通信。";
+    if(cur.id==="l2")extra="第1轮在起点先左转向北，第3轮在右上角左转向西，随后抵达营地。若先执行前进，第一轮就会越界。";
+    if(cur.id==="l3")extra="每轮先到下一站，再扫描并判断；第 "+sim.scans+" 次扫描发现水冰，小车留在"+(sampleIndex(sim.x,sim.y)+1)+"号样点。";
+    if(cur.id==="l4")extra="每轮前进两格、右转 90°；四轮完成一圈。";
+  }
+  $("mReason").innerHTML=r+(extra?"<br><b>"+extra+"</b>":"");
+  var ex=$("mExtra");ex.innerHTML="";
+  if(win&&cur.id==="l4"){
+    ex.innerHTML='<table><tr><th>巡逻路线</th><th>重复次数</th><th>每次旋转</th></tr>'+
+      '<tr><td>正方形（4条边）</td><td>4 次</td><td>90°</td></tr>'+
+      '<tr><td>三角形</td><td>3 次</td><td>120°</td></tr>'+
+      '<tr><td>正六边形</td><td>6 次</td><td>60°</td></tr></table>'+
+      '<div style="font-size:13px;color:#6b7280;text-align:center">下节课：重复执行 __ 次＋移动 __ 步＋旋转 __ 度</div>';
+  }
+  $("mXQ").innerHTML="<b>小七：</b>"+(win?(cur.id==="l3"||cur.id==="l4"?"再看一下两种时机的结果，对照你刚才的预测。":"对照地图和运行轨迹，看看每轮做了什么。") :cur.hint);
+  $("mAnsBtn").style.display=(win||!cur.ans)?"none":"";
+  var go=$("mGo");
+  var idx=LEVELS.indexOf(cur);
+  go.style.display=win?"":"none";
+  go.textContent=idx<LEVELS.length-1?"➡ 下一关":"🏠 回主页";
+  window.__nextIdx=idx;
+}
+function cheer(){return "干得漂亮！小玉兔谢谢你们！";}
+window.closeModal=function(){$("modal").classList.add("hidden");};
+window.nextLevel=function(){window.closeModal();var i=window.__nextIdx;if(i<LEVELS.length-1)openLevel(LEVELS[i+1]);else window.goHome();};
+window.askXQ=function(){if(cur)$("xqText").innerHTML="<b>小七悄悄说：</b>"+cur.hint;};
+
+/* 支持 #l2 直接打开指定关卡（#l2,ans 可同时填入标准答案，方便讲评） */
+function applyHash(){
+  var h=(location.hash||"").replace(/^#/,"").trim();
+  if(!h)return false;
+  var parts=h.split(/[&,]/), id=parts[0], lv=null;
+  for(var i=0;i<LEVELS.length;i++)if(LEVELS[i].id===id)lv=LEVELS[i];
+  if(!lv)return false;
+  openLevel(lv);
+  if(parts.indexOf("ans")>=0)window.fillAns();
+  return true;
+}
+if(!applyHash())openLevel(LEVELS[0]);
+})();
+</script>
+</body>
+</html>
