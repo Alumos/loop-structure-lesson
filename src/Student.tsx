@@ -1,3 +1,4 @@
+import { compactSnapshot } from "../shared/records";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
@@ -238,7 +239,7 @@ export function Student({ goTeacher }: { goTeacher: () => void }) {
             </form>
           )}
           <p className="entry-notice">
-            本课堂会记录练习结果、操作步骤和练习区域内的鼠标轨迹，供老师指导与讲评。
+            本课堂保存流程图方案、预测答案与练习结果，供老师指导与讲评。鼠标和运行画面仅供实时观察，不保存轨迹。
           </p>
           {enrollment?.stale && (
             <p className="text-xs text-amber-700">
@@ -303,10 +304,30 @@ function Workspace({
       })
       .catch(() => {});
   }, [setData]);
+  const liveBusy = useRef(false);
   const emit = useCallback(
     (s: Snapshot, kind: string, label: string) => {
+      if (kind === "pointer" || kind === "step") {
+        // Live observation is best effort: never queue or replay animation telemetry.
+        if (!navigator.onLine || liveBusy.current) return;
+        liveBusy.current = true;
+        void api("/student/live", { snapshot: s, label })
+          .catch(() => {})
+          .finally(() => {
+            liveBusy.current = false;
+          });
+        return;
+      }
       void enqueue(p.id, "/student/events", {
-        events: [{ id: uuid(), at: Date.now(), kind, label, snapshot: s }],
+        events: [
+          {
+            id: uuid(),
+            at: Date.now(),
+            kind,
+            label,
+            snapshot: compactSnapshot(s),
+          },
+        ],
       }).catch(() =>
         setError("本机存储不可用，操作无法可靠保存。请联系教师。"),
       );

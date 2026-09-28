@@ -57,7 +57,9 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(
     page.getByRole("heading", { name: "演示学生甲 / 演示学生乙" }),
   ).toBeVisible();
-  await expect(page.locator(".monitor-frame .flow-block")).toHaveCount(2);
+  await expect(page.locator(".monitor-frame [data-block-index]")).toHaveCount(
+    2,
+  );
   await student.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(student.locator(".run-status")).toContainText("任务完成", {
     timeout: 25000,
@@ -134,7 +136,7 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
     .getByRole("row")
     .filter({ hasText: "演示学生甲 / 演示学生乙" })
     .click();
-  await page.getByRole("button", { name: "操作回放" }).click();
+  await page.getByRole("button", { name: "方案记录" }).click();
   await expect(page.getByLabel("回放时间轴")).toBeVisible();
   await expect(page.getByRole("button", { name: "播放回放" })).toBeEnabled();
   await page.getByRole("button", { name: "播放回放" }).click();
@@ -155,4 +157,77 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   ).toBeVisible();
   expect(errors).toEqual([]);
   await studentContext.close();
+});
+
+test("规范流程图保留分支、时机切换和积木编辑", async ({ page }) => {
+  await page.request.post("/api/teacher/login", {
+    data: { username: "Alumos", password: "browser-test-password" },
+  });
+  const created = await page.request.post("/api/teacher/classrooms", {
+    data: { classId: "demo-5", name: "流程图检查课堂" },
+  });
+  const room = await created.json();
+  await page.request.post("/api/student/join", {
+    data: { classroomId: room.id, studentIds: ["003"] },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: /02 峡谷巡路/ }).click();
+  await page
+    .locator(".palette")
+    .getByRole("button", { name: "前方危险则左转" })
+    .click();
+  await page
+    .locator(".palette")
+    .getByRole("button", { name: "前进 1 格" })
+    .click();
+  await expect(page.locator('[data-node="block-0"]')).toContainText(
+    "前方危险？",
+  );
+  await expect(page.locator('[data-node="turn-0"]')).toContainText("左转 90°");
+  await expect(page.locator('[data-node="end"]')).toContainText("结束");
+  await page.screenshot({
+    path: "artifacts/flowchart-branch-pre.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "下移第1块", exact: true }).click();
+  await expect(page.locator('[data-node="block-0"]')).toContainText(
+    "前进 1 格",
+  );
+  await page.getByRole("button", { name: "上移第2块", exact: true }).click();
+  await expect(page.locator('[data-node="block-0"]')).toContainText(
+    "前方危险？",
+  );
+  await page
+    .getByRole("button", { name: "先执行，再判断", exact: true })
+    .click();
+  await page.screenshot({
+    path: "artifacts/flowchart-branch-post.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "删除第1块", exact: true }).click();
+  await expect(page.locator("[data-block-index]")).toHaveCount(1);
+  await page.getByRole("button", { name: /04 绕坑一圈/ }).click();
+  await page.getByRole("button", { name: "0 轮", exact: true }).click();
+  await page
+    .getByRole("button", { name: "先执行，再判断", exact: true })
+    .click();
+  await page.screenshot({
+    path: "artifacts/flowchart-loop-post.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "开始模拟", exact: true }).click();
+  await expect(page.locator(".run-status")).toContainText(
+    "任务完成：4 轮，8 格",
+    { timeout: 20000 },
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "artifacts/student-mobile.png",
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });

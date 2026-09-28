@@ -1,6 +1,7 @@
+import { restoreSnapshot } from "../../shared/records";
+import { Flow } from "./Flow";
 import {
   ArrowDown,
-  ArrowUp,
   Check,
   ChevronRight,
   Flag,
@@ -12,7 +13,6 @@ import {
   RotateCcw,
   Satellite,
   Square,
-  Trash2,
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
@@ -127,134 +127,6 @@ export function MoonBoard({
     </div>
   );
 }
-function Flow({
-  plan,
-  active,
-  onPlan,
-  readonly,
-}: {
-  plan: Plan;
-  active: Frame["active"];
-  onPlan: (p: Plan) => void;
-  readonly: boolean;
-}) {
-  const body = (
-    <div className="loop-body">
-      <span className="flow-label">循环体</span>
-      {plan.body.map((id, i) => (
-        <div key={`${id}-${i}`}>
-          <div
-            className={cn(
-              "flow-block",
-              active === i && "executing",
-              id === "if_left" && "branch-block",
-            )}
-          >
-            <span className="step-number">{i + 1}</span>
-            <span className="flex-1">
-              {id === "if_left" && <span aria-hidden="true">◇ </span>}
-              {blocks[id]}
-              {id === "if_left" && (
-                <small className="block-note">是 → 左转　否 → 直接往下</small>
-              )}
-            </span>
-            <div className="block-actions">
-              <button
-                disabled={readonly || i === 0}
-                aria-label={`上移第${i + 1}块`}
-                onClick={() => {
-                  const a = [...plan.body];
-                  [a[i - 1], a[i]] = [a[i], a[i - 1]];
-                  onPlan({ ...plan, body: a });
-                }}
-              >
-                <ArrowUp size={13} />
-              </button>
-              <button
-                disabled={readonly || i === plan.body.length - 1}
-                aria-label={`下移第${i + 1}块`}
-                onClick={() => {
-                  const a = [...plan.body];
-                  [a[i + 1], a[i]] = [a[i], a[i + 1]];
-                  onPlan({ ...plan, body: a });
-                }}
-              >
-                <ArrowDown size={13} />
-              </button>
-              <button
-                disabled={readonly}
-                aria-label={`删除第${i + 1}块`}
-                onClick={() =>
-                  onPlan({ ...plan, body: plan.body.filter((_, k) => k !== i) })
-                }
-              >
-                <Trash2 size={13} />
-              </button>
-            </div>
-          </div>
-          <ArrowDown className="flow-arrow" size={17} />
-        </div>
-      ))}
-      <div
-        className="drop-zone"
-        onDragOver={(e) => {
-          if (!readonly) e.preventDefault();
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          const id = e.dataTransfer.getData("text/plain");
-          if (!readonly && blocks[id] && plan.body.length < 8)
-            onPlan({ ...plan, body: [...plan.body, id] });
-        }}
-      >
-        <Plus size={16} />
-        点击上方积木，或拖到这里
-      </div>
-    </div>
-  );
-  const condition = (
-    <div className="condition-row">
-      <div
-        className={cn("condition-node", active === "condition" && "executing")}
-      >
-        <svg
-          className="condition-shape"
-          viewBox="0 0 240 108"
-          preserveAspectRatio="none"
-          aria-hidden="true"
-        >
-          <path d="M120 1 L239 54 L120 107 L1 54 Z" />
-        </svg>
-        <span className="text-xs opacity-60">循环判断条件</span>
-        <strong>{conditions[plan.condition]}</strong>
-      </div>
-      <span className="stop-branch">是 → 结束</span>
-    </div>
-  );
-  return (
-    <div className="flow-diagram">
-      <div className="flow-terminal">开始</div>
-      <ArrowDown className="flow-arrow" size={18} />
-      <div className="loop-rail">
-        <div className="return-label">返回</div>
-        {plan.timing === "pre" ? (
-          <>
-            {condition}
-            <div className="flow-connector">否 ↓</div>
-            {body}
-          </>
-        ) : (
-          <>
-            {body}
-            <ArrowDown className="flow-arrow" size={18} />
-            {condition}
-            <div className="flow-connector">否 → 返回循环体</div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 export function Exercise({
   snapshot: s,
   onChange = () => {},
@@ -272,6 +144,7 @@ export function Exercise({
   answersOpen?: boolean;
   attempts?: any[];
 }) {
+  s = restoreSnapshot(s);
   const l = levels.find((l) => l.id === s.activity);
   if (!l) return null;
   const plan = s.plan || initialPlan(l.id),

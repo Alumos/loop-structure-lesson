@@ -14,9 +14,22 @@ export function App() {
     history.pushState({}, "", value ? "/teacher" : "/");
     setTeacher(value);
   }
-  return teacher ? (
-    <Teacher goStudent={() => go(false)} />
-  ) : (
-    <Student goTeacher={() => go(true)} />
+  return (
+    <>
+      {teacher ? (
+        <Teacher goStudent={() => go(false)} />
+      ) : (
+        <Student goTeacher={() => go(true)} />
+      )}
+      <footer className="site-footer">
+        <a
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          苏ICP备2021038338号-1
+        </a>
+      </footer>
+    </>
   );
 }

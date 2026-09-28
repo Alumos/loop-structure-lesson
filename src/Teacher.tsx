@@ -857,7 +857,7 @@ function Detail({
           <p className="text-muted-foreground text-sm">
             {mode === "live"
               ? "同步练习区域、巡视方案和鼠标位置"
-              : "按记录重建练习区域；长停顿压缩为最多 2 秒"}
+              : "只查看流程图变化、预测答案与运行结果，跳过鼠标和动画过程"}
           </p>
         </div>
         <div className="flex items-center flex-wrap gap-2">
@@ -886,7 +886,7 @@ function Detail({
             onClick={() => void history()}
           >
             <FolderClock />
-            操作回放
+            方案记录
           </Button>
         </div>
       </div>
@@ -963,7 +963,7 @@ function Detail({
             {events[index]?.label || "回放可能已过保留期，成绩仍可在下方查看。"}
           </div>
           <select
-            aria-label="跳转到关键操作"
+            aria-label="跳转到方案或预测"
             value={events[index]?.kind === "pointer" ? "" : String(index)}
             onChange={(e) => {
               if (e.target.value) {
@@ -972,7 +972,7 @@ function Detail({
               }
             }}
           >
-            <option value="">跳转到关键操作……</option>
+            <option value="">跳转到方案或预测……</option>
             {events.map((e, i) =>
               e.kind !== "pointer" && e.kind !== "step" ? (
                 <option key={e.seq} value={i}>
@@ -983,6 +983,28 @@ function Detail({
           </select>
         </Card>
       )}
+      <Card className="p-4 mb-4">
+        <div className="section-label mb-3">先预测，再运行 · 各关预测答案</div>
+        <div className="grid grid-cols-2 gap-3">
+          {levels.map((l) => {
+            const recorded = detail?.predictions?.find(
+              (v: any) => v.level === l.id,
+            )?.prediction;
+            const prediction =
+              snapshot?.activity === l.id
+                ? snapshot.prediction || recorded
+                : recorded;
+            return (
+              <div key={l.id} className="rounded-lg border p-3 text-sm">
+                <span className="text-muted-foreground">{l.title}</span>
+                <strong className="block mt-1">
+                  {prediction || "尚未作答"}
+                </strong>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
       <Card className="monitor-frame">
         {snapshot ? (
           <Screen snapshot={snapshot} members={members} />
@@ -1202,7 +1224,7 @@ function Storage({
           note="包含数据库与写入日志"
         />
         <Stat
-          label="操作回放保留"
+          label="关键状态保留"
           value={`${stats?.replayDays ?? "—"} 天`}
           icon={<FolderClock />}
           note="过期自动删除回放，暂留成绩"
@@ -1214,7 +1236,7 @@ function Storage({
           note="超过期限自动清理做题记录"
         />
         <Stat
-          label="已保存操作事件"
+          label="已保存关键状态"
           value={String(stats?.events ?? "—")}
           icon={<Activity />}
           note={`每组最多保留 ${stats?.maxEvents ?? "—"} 条`}

@@ -1,3 +1,4 @@
+import { compactSnapshot } from "../../shared/records";
 import { api, ApiError } from "./api";
 import { uuid } from "./utils";
 export type Job = {
@@ -80,7 +81,20 @@ export function startQueue(
             batch.length < 30
           )
             batch.push(js[++i]);
-          body = { events: batch.flatMap((v) => v.body.events) };
+          body = {
+            events: batch
+              .flatMap((v) => v.body.events)
+              .filter((e: any) => !["pointer", "step"].includes(e.kind))
+              .map((e: any) => ({
+                ...e,
+                snapshot: compactSnapshot(e.snapshot),
+              })),
+          };
+          if (!body.events.length) {
+            for (const v of batch)
+              await transaction("readwrite", (s) => s.delete(v.id));
+            continue;
+          }
         }
         try {
           await api(j.path, body);

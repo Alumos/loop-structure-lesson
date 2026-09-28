@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { levels } from "../shared/engine.js";
+import { levels, simulate } from "../shared/engine.js";
 const dir = mkdtempSync(join(tmpdir(), "moon-api-")),
   port = 19341,
   base = `http://127.0.0.1:${port}`;
@@ -346,4 +346,61 @@ test("事件数量上限与到期清理保留近期成绩，删除过期小组",
     (await req("/student/me", undefined, oldJoin.cookie)).status,
     401,
   );
+});
+
+test("仅保存不同方案和预测，鼠标与动画不增加记录或覆盖学习状态", async () => {
+  const created = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "精简记录课堂",
+  });
+  const joined = await req(
+    "/student/join",
+    { classroomId: created.data.id, studentIds: ["002"] },
+    "",
+  );
+  const cookie = joined.cookie,
+    pid = joined.data.participant.id;
+  const snapshot = {
+    activity: "l1",
+    plan: levels[0].answer,
+    prediction: "12 轮",
+    frame: simulate("l1", levels[0].answer).frames[0],
+    pointer: { x: 0.4, y: 0.5, kind: "move" },
+  };
+  const send = async (kind: string, s = snapshot) =>
+    req(
+      "/student/events",
+      {
+        events: [
+          { id: randomUUID(), at: Date.now(), kind, label: kind, snapshot: s },
+        ],
+      },
+      cookie,
+    );
+  await send("edit");
+  await send("edit");
+  await send("predict", { ...snapshot, prediction: "6 轮" });
+  for (let i = 0; i < 60; i++) {
+    const r = await req("/student/live", { snapshot, label: "模拟帧" }, cookie);
+    assert.equal(r.status, 200);
+  }
+  await send("pointer");
+  await send("step");
+  const history = (await req(`/teacher/participants/${pid}/events`)).data
+    .events;
+  assert.equal(history.length, 2);
+  assert.deepEqual(
+    history.map((e: any) => e.kind),
+    ["edit", "predict"],
+  );
+  assert.equal(history[0].snapshot.prediction, "12 轮");
+  assert.equal(history[1].snapshot.prediction, "6 轮");
+  for (const e of history) {
+    assert.equal(e.snapshot.frame, undefined);
+    assert.equal(e.snapshot.pointer, undefined);
+  }
+  const detail = (await req("/teacher/participants/" + pid)).data;
+  assert.equal(detail.state.prediction, "6 轮");
+  assert.equal(detail.state.frame, undefined);
+  assert.equal(detail.predictions[0].prediction, "6 轮");
 });

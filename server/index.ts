@@ -1,3 +1,8 @@
+import {
+  compactSnapshot,
+  restoreSnapshot,
+  keepHistory,
+} from "../shared/records.js";
 import express, {
   type Request,
   type Response,
@@ -297,12 +302,9 @@ app.post("/api/student/join", rate, async (req, res) => {
         (parse(v.members) as any[]).some((m) => ids.includes(m.id)),
     )
   )
-    return res
-      .status(409)
-      .json({
-        error:
-          "该学生已经加入另一小组，请选择原来的小组成员，或请教师清理原记录",
-      });
+    return res.status(409).json({
+      error: "该学生已经加入另一小组，请选择原来的小组成员，或请教师清理原记录",
+    });
   if (!p) {
     const id = uid(),
       now = Date.now();
@@ -428,6 +430,20 @@ const eventSchema = z.object({
   label: z.string().max(200),
   snapshot: snapshotSchema,
 });
+app.post("/api/student/live", ...student, writable, (req, res) => {
+  const b = z
+    .object({ snapshot: snapshotSchema, label: z.string().max(200) })
+    .parse(req.body);
+  const p = res.locals.participant;
+  broadcast("state", {
+    id: p.id,
+    classroomId: p.classroom_id,
+    state: b.snapshot,
+    last_seen: Date.now(),
+    label: b.label,
+  });
+  res.json({ ok: true });
+});
 app.post("/api/student/events", ...student, writable, (req, res) => {
   const { events } = z
       .object({ events: z.array(eventSchema).min(1).max(100) })
@@ -441,25 +457,42 @@ app.post("/api/student/events", ...student, writable, (req, res) => {
       "INSERT OR IGNORE INTO events(event_id,participant_id,at,client_at,kind,label,snapshot) VALUES(?,?,?,?,?,?,?)",
     );
     for (const e of events) {
-      const r = insert.run(
-        e.id,
-        p.id,
-        now,
-        e.at,
-        e.kind,
-        e.label,
-        JSON.stringify(e.snapshot),
-      );
-      if (r.changes) {
-        latest = e;
-        if (e.kind === "help")
-          stmt("UPDATE participants SET needs_help=1 WHERE id=?").run(p.id);
-        stmt("INSERT OR REPLACE INTO drafts VALUES(?,?,?)").run(
+      // Discard legacy queued mouse/animation events as well.
+      if (e.kind === "pointer" || e.kind === "step") continue;
+      if (
+        stmt("SELECT 1 FROM events WHERE participant_id=? AND event_id=?").get(
           p.id,
-          e.snapshot.activity,
-          JSON.stringify(e.snapshot),
+          e.id,
+        )
+      )
+        continue;
+      const snapshot = compactSnapshot(e.snapshot);
+      const previous = parse(
+        (
+          stmt(
+            "SELECT snapshot FROM drafts WHERE participant_id=? AND activity=?",
+          ).get(p.id, snapshot.activity) as any
+        )?.snapshot,
+      );
+      if (keepHistory(e.kind, snapshot, previous)) {
+        insert.run(
+          e.id,
+          p.id,
+          now,
+          e.at,
+          e.kind,
+          e.label,
+          JSON.stringify(snapshot),
         );
       }
+      latest = { ...e, snapshot };
+      if (e.kind === "help")
+        stmt("UPDATE participants SET needs_help=1 WHERE id=?").run(p.id);
+      stmt("INSERT OR REPLACE INTO drafts VALUES(?,?,?)").run(
+        p.id,
+        snapshot.activity,
+        JSON.stringify(snapshot),
+      );
     }
     if (latest)
       stmt("UPDATE participants SET state=?,last_seen=? WHERE id=?").run(
@@ -479,7 +512,7 @@ app.post("/api/student/events", ...student, writable, (req, res) => {
     broadcast("state", {
       id: p.id,
       classroomId: p.classroom_id,
-      state: latest.snapshot,
+      state: restoreSnapshot(latest.snapshot),
       last_seen: now,
       label: latest.label,
     });
@@ -636,6 +669,16 @@ app.get("/api/teacher/participants/:id", teacher, (req, res) => {
   if (!p) return res.status(404).json({ error: "学生记录不存在或已清理" });
   res.json({
     ...p,
+    predictions: (
+      stmt("SELECT activity,snapshot FROM drafts WHERE participant_id=?").all(
+        p.id,
+      ) as any[]
+    )
+      .filter((d) => d.activity.startsWith("l"))
+      .map((d) => ({
+        level: d.activity,
+        prediction: parse(d.snapshot)?.prediction || "",
+      })),
     attempts: stmt("SELECT * FROM attempts WHERE participant_id=? ORDER BY at")
       .all(p.id)
       .map((v: any) => ({ ...v, plan: parse(v.plan) })),
@@ -837,6 +880,45 @@ function maintenance() {
     "PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA wal_checkpoint(TRUNCATE);",
   );
 }
+function compactLegacyRecords() {
+  const version = (stmt("PRAGMA user_version").get() as any).user_version;
+  if (version >= 1) return;
+  db.exec("BEGIN");
+  try {
+    db.exec(
+      "DELETE FROM events WHERE kind NOT IN ('edit','predict','run','result','help')",
+    );
+    for (const e of stmt(
+      "SELECT seq,snapshot FROM events",
+    ).iterate() as Iterable<any>)
+      stmt("UPDATE events SET snapshot=? WHERE seq=?").run(
+        JSON.stringify(compactSnapshot(parse(e.snapshot))),
+        e.seq,
+      );
+    for (const d of stmt(
+      "SELECT participant_id,activity,snapshot FROM drafts",
+    ).iterate() as Iterable<any>)
+      stmt(
+        "UPDATE drafts SET snapshot=? WHERE participant_id=? AND activity=?",
+      ).run(
+        JSON.stringify(compactSnapshot(parse(d.snapshot))),
+        d.participant_id,
+        d.activity,
+      );
+    for (const p of stmt(
+      "SELECT id,state FROM participants WHERE state IS NOT NULL",
+    ).iterate() as Iterable<any>)
+      stmt("UPDATE participants SET state=? WHERE id=?").run(
+        JSON.stringify(compactSnapshot(parse(p.state))),
+        p.id,
+      );
+    db.exec("PRAGMA user_version=1; COMMIT");
+  } catch (e) {
+    db.exec("ROLLBACK");
+    throw e;
+  }
+}
+compactLegacyRecords();
 maintenance();
 const retentionTimer = setInterval(maintenance, 3600_000);
 retentionTimer.unref();
