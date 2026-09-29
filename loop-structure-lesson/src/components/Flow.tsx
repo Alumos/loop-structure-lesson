@@ -8,6 +8,7 @@ import {
 } from "react";
 import {
   Grip,
+  AlignCenter,
   Maximize2,
   Minimize2,
   Link2,
@@ -28,6 +29,7 @@ import {
   type Plan,
 } from "../../shared/engine";
 import { cn } from "../lib/utils";
+import { snapPoint, arrangeFlow } from "../lib/flow-layout";
 
 type Point = { x: number; y: number };
 type Position = Point & { node: FlowNode; width: number; height: number };
@@ -196,7 +198,9 @@ export function Flow({
     [selectedEdge, setSelectedEdge] = useState<string | null>(null),
     [viewportWidth, setViewportWidth] = useState(600),
     [zoom, setZoom] = useState(1),
-    [expanded, setExpanded] = useState(false);
+    [expanded, setExpanded] = useState(false),
+    [snapEnabled, setSnapEnabled] = useState(true),
+    [edgeMenu, setEdgeMenu] = useState<Point | null>(null);
   const viewport = useRef<HTMLDivElement>(null),
     canvas = useRef<HTMLDivElement>(null),
     gestureRef = useRef<Gesture | null>(null);
@@ -204,27 +208,44 @@ export function Flow({
     validation = useMemo(() => validateFlow(level, plan), [level, plan]);
   const scale = Math.min(1, viewportWidth / 900) * zoom;
   const legacy = positionsFor(nodes, plan.timing, 900);
-  const positions = legacy.positions.map((p) => {
-    const base = { ...p, x: p.node.x ?? p.x, y: p.node.y ?? p.y };
-    if (gesture?.type === "move" && gesture.nodeId === p.node.id) {
-      base.x = Math.max(
-        p.width / 2 + 24,
-        Math.min(
-          3900,
-          gesture.origin.x + (gesture.current.x - gesture.start.x) / scale,
-        ),
-      );
-      base.y = Math.max(
-        p.height / 2 + 24,
-        Math.min(
-          3900,
-          gesture.origin.y + (gesture.current.y - gesture.start.y) / scale,
-        ),
-      );
-    }
-    return base;
-  });
-  const width = Math.max(900, ...positions.map((p) => p.x + p.width / 2 + 60));
+  const storedPositions = legacy.positions.map((p) => ({
+    ...p,
+    x: p.node.x ?? p.x,
+    y: p.node.y ?? p.y,
+  }));
+  const align = (point: Point, id?: string) =>
+    snapEnabled
+      ? snapPoint(
+          point,
+          storedPositions.map((p) => ({ id: p.node.id, x: p.x, y: p.y })),
+          id,
+          10 / scale,
+        )
+      : { ...point, guideX: undefined, guideY: undefined };
+  const moving =
+    gesture?.type === "move"
+      ? align(
+          {
+            x: gesture.origin.x + (gesture.current.x - gesture.start.x) / scale,
+            y: gesture.origin.y + (gesture.current.y - gesture.start.y) / scale,
+          },
+          gesture.nodeId,
+        )
+      : null;
+  const positions = storedPositions.map((p) =>
+    gesture?.type === "move" && gesture.nodeId === p.node.id && moving
+      ? {
+          ...p,
+          x: Math.max(p.width / 2 + 24, Math.min(3900, moving.x)),
+          y: Math.max(p.height / 2 + 24, Math.min(3900, moving.y)),
+        }
+      : p,
+  );
+  const width = Math.max(
+    900,
+    viewportWidth / scale,
+    ...positions.map((p) => p.x + p.width / 2 + 60),
+  );
   const height = Math.max(
     1000,
     ...positions.map((p) => p.y + p.height / 2 + 100),
@@ -289,6 +310,7 @@ export function Flow({
       while (nodes.some((n) => n.id === `${item.id}-${number}`)) number++;
       id = `${item.id}-${number}`;
     }
+    point = align(point);
     const halfWidth =
       item.kind === "decision" ? 122 : item.kind === "action" ? 98 : 58;
     apply({
@@ -366,7 +388,8 @@ export function Flow({
         edge,
       ],
     });
-    setSelectedEdge(edge.id);
+    setSelectedEdge(null);
+    setEdgeMenu(null);
     setSelected(null);
   };
   const begin = (
@@ -429,6 +452,13 @@ export function Flow({
         addNode(g.paletteId, point);
       if (g.type === "move" && moved) {
         const p = positions.find((p) => p.node.id === g.nodeId)!;
+        const snapped = align(
+          {
+            x: g.origin.x + (e.clientX - g.start.x) / scale,
+            y: g.origin.y + (e.clientY - g.start.y) / scale,
+          },
+          g.nodeId,
+        );
         apply({
           ...plan,
           nodes: nodes.map((n) =>
@@ -436,22 +466,10 @@ export function Flow({
               ? {
                   ...n,
                   x: Math.round(
-                    Math.max(
-                      p.width / 2 + 24,
-                      Math.min(
-                        3900,
-                        g.origin.x + (e.clientX - g.start.x) / scale,
-                      ),
-                    ),
+                    Math.max(p.width / 2 + 24, Math.min(3900, snapped.x)),
                   ),
                   y: Math.round(
-                    Math.max(
-                      p.height / 2 + 24,
-                      Math.min(
-                        3900,
-                        g.origin.y + (e.clientY - g.start.y) / scale,
-                      ),
-                    ),
+                    Math.max(p.height / 2 + 24, Math.min(3900, snapped.y)),
                   ),
                 }
               : n,
@@ -485,14 +503,39 @@ export function Flow({
       window.removeEventListener("keydown", key);
     };
   }, [!!gesture, locked, plan, scale]);
+  const deleteEdge = () => {
+    if (selectedEdge && !locked) {
+      apply({ ...plan, edges: edges.filter((e) => e.id !== selectedEdge) });
+      setSelectedEdge(null);
+    }
+  };
   const editEdge = edges.find((e) => e.id === selectedEdge);
   const patchEdge = (patch: Partial<FlowEdge>) =>
     apply({
       ...plan,
       edges: edges.map((e) => (e.id === selectedEdge ? { ...e, ...patch } : e)),
     });
+  const selectedRoute = editEdge && edgeRoute(editEdge, positions);
+  const menuPoint =
+    edgeMenu ||
+    (selectedRoute
+      ? { x: selectedRoute.x + 12, y: selectedRoute.y + 18 }
+      : { x: 50, y: 50 });
   return (
-    <div className={cn("flow-builder", expanded && "flow-builder-expanded")}>
+    <div
+      className={cn("flow-builder", expanded && "flow-builder-expanded")}
+      onKeyDown={(e) => {
+        if (
+          !locked &&
+          selectedEdge &&
+          (e.key === "Delete" || e.key === "Backspace") &&
+          !(e.target as HTMLElement).closest("input,select,textarea")
+        ) {
+          e.preventDefault();
+          deleteEdge();
+        }
+      }}
+    >
       <div className="flow-builder-toolbar">
         <div>
           <strong>自由搭建流程图</strong>
@@ -512,6 +555,20 @@ export function Flow({
           </button>
           {!readonly && (
             <>
+              <button
+                type="button"
+                className="flow-arrange-button"
+                aria-label="一键整理"
+                title="一键整理：对齐节点和箭头，保留连接关系"
+                disabled={locked || nodes.length < 2}
+                onClick={() => {
+                  apply(arrangeFlow(plan));
+                  setSelectedEdge(null);
+                }}
+              >
+                <AlignCenter size={16} />
+                整理
+              </button>
               <button
                 type="button"
                 aria-label="撤销上一步"
@@ -577,6 +634,17 @@ export function Flow({
         </>
       )}
       <div className="flow-zoom">
+        {!readonly && (
+          <label className="flow-snap-toggle">
+            <input
+              type="checkbox"
+              checked={snapEnabled}
+              disabled={locked}
+              onChange={(e) => setSnapEnabled(e.target.checked)}
+            />
+            自动对齐
+          </label>
+        )}
         <span>
           {nodes.length} 个节点
           {nodes.length >= 30 ? "（画布已满，请删除多余节点）" : ""}
@@ -617,6 +685,7 @@ export function Flow({
               transformOrigin: "top left",
             }}
             aria-label="流程图搭建区"
+            tabIndex={0}
             onPointerDown={() => {
               setSelected(null);
               setSelectedEdge(null);
@@ -662,6 +731,13 @@ export function Flow({
                           if (!locked) {
                             event.stopPropagation();
                             setSelectedEdge(e.id);
+                            const rect =
+                              canvas.current!.getBoundingClientRect();
+                            setEdgeMenu({
+                              x: (event.clientX - rect.left) / scale + 16,
+                              y: (event.clientY - rect.top) / scale + 16,
+                            });
+                            canvas.current?.focus({ preventScroll: true });
                             setSelected(null);
                           }
                         }}
@@ -689,6 +765,24 @@ export function Flow({
                     />
                   );
                 })()}
+              {moving?.guideX !== undefined && (
+                <line
+                  className="flow-alignment-guide"
+                  x1={moving.guideX}
+                  y1={0}
+                  x2={moving.guideX}
+                  y2={height}
+                />
+              )}
+              {moving?.guideY !== undefined && (
+                <line
+                  className="flow-alignment-guide"
+                  x1={0}
+                  y1={moving.guideY}
+                  x2={width}
+                  y2={moving.guideY}
+                />
+              )}
               {positions.map(({ node: n, x, y, width: w, height: h }) => (
                 <g
                   key={n.id}
@@ -835,6 +929,63 @@ export function Flow({
                 )}
               </div>
             ))}
+            {!readonly && editEdge && !gesture && (
+              <div
+                className="flow-edge-editor"
+                style={{
+                  left: Math.max(8, Math.min(width - 260 / scale, menuPoint.x)),
+                  top: Math.max(8, Math.min(height - 105 / scale, menuPoint.y)),
+                  transform: `scale(${1 / scale})`,
+                  transformOrigin: "top left",
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <span>
+                  {nodeText(nodes.find((n) => n.id === editEdge.from))} →{" "}
+                  {nodeText(nodes.find((n) => n.id === editEdge.to))}
+                </span>
+                {nodes.find((n) => n.id === editEdge.from)?.kind ===
+                  "decision" && (
+                  <label>
+                    分支{" "}
+                    <select
+                      aria-label="箭头分支"
+                      disabled={locked}
+                      value={editEdge.label}
+                      onChange={(e) =>
+                        patchEdge({ label: e.target.value as "yes" | "no" })
+                      }
+                    >
+                      <option value="yes">是</option>
+                      <option value="no">否</option>
+                    </select>
+                  </label>
+                )}
+                <label>
+                  <input
+                    type="checkbox"
+                    aria-label="作为返回箭头"
+                    disabled={locked}
+                    checked={editEdge.kind === "return"}
+                    onChange={(e) =>
+                      patchEdge({
+                        kind: e.target.checked ? "return" : "normal",
+                      })
+                    }
+                  />{" "}
+                  返回箭头
+                </label>
+                <button
+                  type="button"
+                  disabled={locked}
+                  aria-label="删除选中箭头"
+                  onClick={deleteEdge}
+                >
+                  <Trash2 size={14} />
+                  删除
+                </button>
+              </div>
+            )}
             {!nodes.length && (
               <div className="flow-builder-empty">
                 把上方的方块拖到这里
@@ -858,57 +1009,6 @@ export function Flow({
           拖到目标图形的上、下、左或右边缘后松手；按 Esc 取消。
         </div>
       )}
-      {!readonly && editEdge && (
-        <div className="flow-edge-editor">
-          <span>
-            {nodeText(nodes.find((n) => n.id === editEdge.from))} →{" "}
-            {nodeText(nodes.find((n) => n.id === editEdge.to))}
-          </span>
-          {nodes.find((n) => n.id === editEdge.from)?.kind === "decision" && (
-            <label>
-              分支{" "}
-              <select
-                aria-label="箭头分支"
-                disabled={locked}
-                value={editEdge.label}
-                onChange={(e) =>
-                  patchEdge({ label: e.target.value as "yes" | "no" })
-                }
-              >
-                <option value="yes">是</option>
-                <option value="no">否</option>
-              </select>
-            </label>
-          )}
-          <label>
-            <input
-              type="checkbox"
-              aria-label="作为返回箭头"
-              disabled={locked}
-              checked={editEdge.kind === "return"}
-              onChange={(e) =>
-                patchEdge({ kind: e.target.checked ? "return" : "normal" })
-              }
-            />{" "}
-            返回箭头
-          </label>
-          <button
-            type="button"
-            disabled={locked}
-            aria-label="删除选中箭头"
-            onClick={() => {
-              apply({
-                ...plan,
-                edges: edges.filter((e) => e.id !== selectedEdge),
-              });
-              setSelectedEdge(null);
-            }}
-          >
-            <Trash2 size={14} />
-            删除
-          </button>
-        </div>
-      )}
       <div
         className={cn("flow-validation", validation.valid && "valid")}
         role="status"
@@ -925,34 +1025,6 @@ export function Flow({
           </>
         )}
       </div>
-      {!!edges.length && !readonly && (
-        <details className="flow-edge-list">
-          <summary>已连箭头（{edges.length}）</summary>
-          {edges.map((e) => (
-            <div key={e.id}>
-              <span onClick={() => setSelectedEdge(e.id)}>
-                {nodeText(nodes.find((n) => n.id === e.from))} →{" "}
-                {nodeText(nodes.find((n) => n.id === e.to))}
-                {e.label && ` · ${e.label === "yes" ? "是" : "否"}`}
-                {e.kind === "return" && " · 返回"}
-              </span>
-              <button
-                type="button"
-                title="删除箭头"
-                disabled={locked}
-                aria-label={
-                  e.kind === "return" ? "删除返回箭头" : `删除箭头${e.id}`
-                }
-                onClick={() =>
-                  apply({ ...plan, edges: edges.filter((v) => v.id !== e.id) })
-                }
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-        </details>
-      )}
     </div>
   );
 }

@@ -71,6 +71,22 @@ async function linkNode(
   );
 }
 
+async function selectEdge(page: Page, selector: string) {
+  const path = page.locator(`${selector} .flow-edge-hit`).first();
+  await path.scrollIntoViewIfNeeded();
+  const point = await path.evaluate((e) => {
+    const path = e as SVGPathElement,
+      p = path.getPointAtLength(path.getTotalLength() / 2);
+    return new DOMPoint(p.x, p.y)
+      .matrixTransform(path.getScreenCTM()!)
+      .toJSON();
+  });
+  await page.mouse.click(point.x, point.y);
+  await expect(
+    page.locator(".flow-builder-canvas .flow-edge-editor"),
+  ).toBeVisible();
+}
+
 async function buildL1(page: Page) {
   await addNode(page, "开始");
   await addNode(page, "到达中继塔？");
@@ -172,8 +188,8 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(
     student.getByRole("button", { name: "先执行，再判断", exact: true }),
   ).toHaveCount(0);
-  await student.locator(".flow-edge-list summary").click();
-  await student.getByRole("button", { name: "删除返回箭头" }).click();
+  await selectEdge(student, '[data-edge-kind="return"]');
+  await student.getByRole("button", { name: "删除选中箭头" }).click();
   await expect(student.locator(".flow-validation")).toContainText(
     "还不能重复执行",
   );
@@ -630,4 +646,81 @@ test("触摸拖入、自由移动、边缘连线、展开缩放和取消拖动",
   await page.getByRole("button", { name: "收起画布" }).click();
   await expect(page.locator(".flow-builder-expanded")).toHaveCount(0);
   await context.close();
+});
+
+test("自动对齐参考线、一键整理和画布内删除箭头", async ({ page }) => {
+  await page.request.post("/api/teacher/login", {
+    data: { username: "Alumos", password: "browser-test-password" },
+  });
+  const room = await (
+    await page.request.post("/api/teacher/classrooms", {
+      data: { classId: "demo-5", name: "对齐与删除" },
+    })
+  ).json();
+  await page.request.post("/api/student/join", {
+    data: { classroomId: room.id, studentIds: ["003"] },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "展开画布" }).click();
+  await buildL1(page);
+  const fwd = page.locator('[data-node="fwd-1"]');
+  const box = (await fwd.locator(".flow-node-content").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    box.x + box.width / 2 + 7,
+    box.y + box.height / 2 + 25,
+    { steps: 8 },
+  );
+  await expect(page.locator(".flow-alignment-guide")).toHaveCount(1);
+  await page.mouse.up();
+  await expect(fwd).toHaveAttribute("data-x", "340");
+  await expect(page.locator(".flow-alignment-guide")).toHaveCount(0);
+  await page.getByRole("checkbox", { name: "自动对齐" }).uncheck();
+  const free = (await fwd.locator(".flow-node-content").boundingBox())!;
+  await dragBetween(
+    page,
+    { x: free.x + free.width / 2, y: free.y + free.height / 2 },
+    { x: free.x + free.width / 2 + 67, y: free.y + free.height / 2 },
+  );
+  await expect(fwd).toHaveAttribute("data-x", "407");
+  const relations = await page
+    .locator("[data-edge]")
+    .evaluateAll((es) => es.map((e) => e.getAttribute("data-edge")));
+  await page.getByRole("button", { name: "一键整理" }).click();
+  await expect(fwd).toHaveAttribute("data-x", "340");
+  await expect(page.locator(".flow-validation")).toContainText("流程图完整");
+  expect(
+    await page
+      .locator("[data-edge]")
+      .evaluateAll((es) => es.map((e) => e.getAttribute("data-edge"))),
+  ).toEqual(relations);
+  const straight = await page
+    .locator('[data-edge-kind="normal"] > path:first-child')
+    .evaluateAll((es) => es.map((e) => e.getAttribute("d")!));
+  expect(
+    straight.filter((d) => d.split("L").length === 2).length,
+  ).toBeGreaterThanOrEqual(3);
+  await selectEdge(page, '[data-edge-kind="return"]');
+  await expect(
+    page
+      .locator(".flow-builder-canvas")
+      .getByRole("button", { name: "删除选中箭头" }),
+  ).toBeVisible();
+  await capture(page, "artifacts/flowchart-aligned-delete.png");
+  await page.getByRole("button", { name: "删除选中箭头" }).click();
+  await expect(page.locator('[data-edge-kind="return"]')).toHaveCount(0);
+  await expect(page.locator(".flow-validation")).toContainText(
+    "请补上一条返回箭头",
+  );
+  await page.getByRole("button", { name: "撤销上一步" }).click();
+  await selectEdge(page, '[data-edge-kind="return"]');
+  await page.keyboard.press("Delete");
+  await expect(page.locator('[data-edge-kind="return"]')).toHaveCount(0);
+  await page.getByRole("button", { name: "撤销上一步" }).click();
+  await expect(page.locator(".flow-validation")).toContainText("流程图完整");
+  await expect(page.locator(".flow-edge-list")).toHaveCount(0);
+  // Undo arrangement restores the freely chosen position, too.
+  await page.getByRole("button", { name: "撤销上一步" }).click();
+  await expect(fwd).toHaveAttribute("data-x", "407");
 });

@@ -2987,3 +2987,44 @@ body {
     padding: 10px;
   }
 }
+
+.flow-alignment-guide {
+  stroke: #f59e0b;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 5;
+}
+.flow-snap-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 8px;
+  color: #475569;
+}
+.flow-edge-editor {
+  position: absolute;
+  z-index: 10;
+  width: 250px;
+  margin: 0;
+  box-shadow: 0 4px 18px #33415530;
+  background: #fff;
+}
+.flow-edge-editor > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.flow-builder-canvas:focus {
+  outline: none;
+}
+.flow-edge.selected > path:first-child {
+  stroke-width: 2.5;
+}
+
+.flow-toolbar-actions .flow-arrange-button {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+}
