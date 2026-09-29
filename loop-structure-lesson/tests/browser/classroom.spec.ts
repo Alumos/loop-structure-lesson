@@ -5,11 +5,44 @@ async function capture(page: Page, path: string) {
   await page.screenshot({ path, fullPage: true });
 }
 
+async function dragBetween(
+  page: Page,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+) {
+  await page.mouse.move(a.x, a.y);
+  await page.mouse.down();
+  await page.mouse.move(b.x, b.y, { steps: 12 });
+  await page.mouse.up();
+}
+
 async function addNode(page: Page, label: string) {
-  await page
+  const palette = page
     .locator(".flow-node-palette")
-    .getByRole("button", { name: label, exact: true })
-    .click();
+    .getByRole("button", { name: label, exact: true });
+  const count = await page.locator("[data-node]").count();
+  const x = label === "左转 90°" || label === "结束" ? 700 : 340;
+  const y = label === "左转 90°" ? 460 : 90 + count * 130;
+  await page
+    .locator(".flow-builder")
+    .evaluate((e) => e.scrollIntoView({ block: "start" }));
+  await palette.scrollIntoViewIfNeeded();
+  const box = (await palette.boundingBox())!;
+  const canvas = page.locator(".flow-builder-canvas");
+  const rect = (await canvas.boundingBox())!;
+  const scale =
+    rect.width /
+    Number(
+      await canvas.evaluate((e) =>
+        (e as HTMLElement).style.width.replace("px", ""),
+      ),
+    );
+  await dragBetween(
+    page,
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    { x: rect.x + x * scale, y: rect.y + y * scale },
+  );
+  await expect(page.locator("[data-node]")).toHaveCount(count + 1);
 }
 
 async function linkNode(
@@ -18,11 +51,24 @@ async function linkNode(
   output: string,
   target: string,
 ) {
-  await page
-    .locator(`[data-node="${source}"]`)
-    .getByRole("button", { name: output, exact: true })
-    .click();
-  await page.locator(`[data-input="${target}"]`).click();
+  const fromAnchor =
+    output === "是 →" ? "right" : output === "回到判断 →" ? "left" : "bottom";
+  const toAnchor = output === "回到判断 →" ? "left" : "top";
+  const sourceElement = page.locator(
+    `[data-node="${source}"] [data-anchor="${fromAnchor}"]`,
+  );
+  const targetElement = page.locator(
+    `[data-node="${target}"] [data-anchor="${toAnchor}"]`,
+  );
+  await sourceElement.scrollIntoViewIfNeeded();
+  await targetElement.scrollIntoViewIfNeeded();
+  const a = (await sourceElement.boundingBox())!,
+    b = (await targetElement.boundingBox())!;
+  await dragBetween(
+    page,
+    { x: a.x + a.width / 2, y: a.y + a.height / 2 },
+    { x: b.x + b.width / 2, y: b.y + b.height / 2 },
+  );
 }
 
 async function buildL1(page: Page) {
@@ -134,13 +180,7 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(
     student.getByRole("button", { name: "开始模拟", exact: true }),
   ).toBeDisabled();
-  await student
-    .locator('[data-node="pulse-1"]')
-    .getByRole("button", { name: "回到判断 →", exact: true })
-    .focus();
-  await student.keyboard.press("Enter");
-  await student.locator('[data-input="condition-tower"]').focus();
-  await student.keyboard.press("Enter");
+  await linkNode(student, "pulse-1", "回到判断 →", "condition-tower");
   await expect(student.locator(".flow-validation")).toContainText("流程图完整");
   await capture(student, "artifacts/student-exercise.png");
   await expect(
@@ -268,23 +308,46 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
       .evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
   ).toBe(true);
   await capture(page, "artifacts/flowchart-branch-pre.png");
-  await page
-    .locator('[data-node="hazard-1"]')
-    .getByRole("button", { name: "下移前方危险？" })
-    .click();
-  await expect(page.locator('[data-node="hazard-1"]')).toHaveCount(1);
-  await page
-    .locator('[data-node="hazard-1"]')
-    .getByRole("button", { name: "上移前方危险？" })
-    .click();
-  await expect(page.locator('[data-node="hazard-1"]')).toContainText(
-    "前方危险？",
+  const hazard = page.locator('[data-node="hazard-1"]');
+  const before = {
+    x: Number(await hazard.getAttribute("data-x")),
+    y: Number(await hazard.getAttribute("data-y")),
+  };
+  const movable = hazard.locator(".flow-node-content");
+  await movable.scrollIntoViewIfNeeded();
+  const box = (await movable.boundingBox())!;
+  await dragBetween(
+    page,
+    { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+    { x: box.x + box.width / 2 + 45, y: box.y + box.height / 2 + 25 },
+  );
+  expect(Number(await hazard.getAttribute("data-x"))).toBeGreaterThan(
+    before.x + 40,
+  );
+  expect(Number(await hazard.getAttribute("data-y"))).toBeGreaterThan(
+    before.y + 20,
+  );
+  await expect(page.locator(".flow-validation")).toContainText("流程图完整");
+  const savedX = await hazard.getAttribute("data-x"),
+    savedY = await hazard.getAttribute("data-y");
+  await expect(hazard.locator(".flow-node-edit")).toBeVisible();
+  await page.reload();
+  await expect(hazard).toHaveAttribute("data-x", savedX!);
+  await expect(hazard).toHaveAttribute("data-y", savedY!);
+  await addNode(page, "前方危险？");
+  await expect(page.locator('[data-node="hazard-2"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "撤销上一步" }).click();
+  await expect(page.locator('[data-node="hazard-2"]')).toHaveCount(0);
+  await expect(page.locator(".flow-port")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^上移|^下移/ })).toHaveCount(
+    0,
   );
   await expect(page.getByText("本关统一使用：先判断，再执行")).toBeVisible();
   await expect(
     page.getByRole("button", { name: "先执行，再判断", exact: true }),
   ).toHaveCount(0);
   await capture(page, "artifacts/flowchart-branch-reordered.png");
+  await page.locator('[data-node="left-1"] .flow-node-content').click();
   await page
     .locator('[data-node="left-1"]')
     .getByRole("button", { name: "删除左转 90°" })
@@ -358,19 +421,7 @@ test("第三关手工连接和拖线，先判断缺少数据，先执行第八�
   await page
     .getByRole("button", { name: "先判断，再执行", exact: true })
     .click();
-  const source = page
-      .locator('[data-node="start"]')
-      .getByRole("button", { name: "下一步 →", exact: true }),
-    target = page.locator('[data-input="condition-ice"]');
-  await source.scrollIntoViewIfNeeded();
-  await target.scrollIntoViewIfNeeded();
-  const a = (await source.boundingBox())!,
-    b = (await target.boundingBox())!;
-  await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
-  await page.mouse.down();
-  await expect(page.locator(".flow-connection-note")).toBeVisible();
-  await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 8 });
-  await page.mouse.up();
+  await linkNode(page, "start", "下一步 →", "condition-ice");
   await expect(page.locator("[data-edge]")).toHaveCount(1);
   await linkNode(page, "condition-ice", "是 →", "end");
   await linkNode(page, "condition-ice", "否 →", "advance-1");
@@ -482,4 +533,101 @@ test("缺少新浏览器 API 时仍可加载名单、登录、运行和保存记
   } finally {
     await context.close();
   }
+});
+
+test("触摸拖入、自由移动、边缘连线、展开缩放和取消拖动", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 1440, height: 1050 },
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.request.post("/api/teacher/login", {
+    data: { username: "Alumos", password: "browser-test-password" },
+  });
+  const room = await (
+    await page.request.post("/api/teacher/classrooms", {
+      data: { classId: "demo-5", name: "触摸操作" },
+    })
+  ).json();
+  await page.request.post("/api/student/join", {
+    data: { classroomId: room.id, studentIds: ["003"] },
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "展开画布" }).click();
+  const cdp = await context.newCDPSession(page);
+  const touchDrag = async (
+    a: { x: number; y: number },
+    b: { x: number; y: number },
+  ) => {
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: a.x, y: a.y }],
+    });
+    for (let i = 1; i <= 10; i++)
+      await cdp.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          { x: a.x + ((b.x - a.x) * i) / 10, y: a.y + ((b.y - a.y) * i) / 10 },
+        ],
+      });
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  };
+  const palette = page.locator('[data-palette-id="start"]');
+  const p = (await palette.boundingBox())!,
+    canvas = (await page.locator(".flow-builder-canvas").boundingBox())!;
+  await touchDrag(
+    { x: p.x + p.width / 2, y: p.y + p.height / 2 },
+    { x: canvas.x + 340, y: canvas.y + 100 },
+  );
+  const start = page.locator('[data-node="start"]');
+  await expect(start).toHaveCount(1);
+  const node = (await start.boundingBox())!;
+  await touchDrag(
+    { x: node.x + node.width / 2, y: node.y + node.height / 2 },
+    { x: node.x + node.width / 2 + 90, y: node.y + node.height / 2 + 60 },
+  );
+  await expect(start).toHaveAttribute("data-x", "430");
+  await expect(start).toHaveAttribute("data-y", "160");
+  await addNode(page, "结束");
+  await page.getByRole("button", { name: "放大画布" }).click();
+  await linkNode(page, "start", "下一步 →", "end");
+  await expect(page.locator("[data-edge]")).toHaveCount(1);
+  // Reconnect from different vertices using touch at the enlarged scale.
+  const from = (await start.locator('[data-anchor="right"]').boundingBox())!;
+  const to = (await page
+    .locator('[data-node="end"] [data-anchor="left"]')
+    .boundingBox())!;
+  await touchDrag(
+    { x: from.x + from.width / 2, y: from.y + from.height / 2 },
+    { x: to.x + to.width / 2, y: to.y + to.height / 2 },
+  );
+  await expect(page.locator("[data-edge]")).toHaveCount(1);
+  await expect
+    .poll(async () => {
+      const data = await (await page.request.get("/api/student/me")).json();
+      const edge = data.participant.state?.plan?.edges?.[0];
+      return edge ? [edge.fromAnchor, edge.toAnchor] : [];
+    })
+    .toEqual(["right", "left"]);
+  await page.getByRole("button", { name: "缩小画布" }).click();
+  await addNode(page, "开始");
+  await expect(page.locator('[data-node="start-1"]')).toHaveCount(1);
+  await page.getByRole("button", { name: "撤销上一步" }).click();
+  const box = (await palette.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 100, box.y + 150);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect(page.locator(".flow-drag-ghost")).toHaveCount(0);
+  await expect(page.locator("[data-node]")).toHaveCount(2);
+  await capture(page, "artifacts/flowchart-free-canvas.png");
+  await page.getByRole("button", { name: "收起画布" }).click();
+  await expect(page.locator(".flow-builder-expanded")).toHaveCount(0);
+  await context.close();
 });

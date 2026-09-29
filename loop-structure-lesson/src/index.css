@@ -2646,65 +2646,6 @@ body {
   color: #64748b;
   font-size: 10px;
 }
-.flow-port {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border: 1px solid #cbd5e1;
-  border-radius: 50%;
-  background: #fff;
-  color: #475569;
-  font-size: 11px;
-  pointer-events: auto;
-  touch-action: none;
-}
-.flow-port:focus-visible,
-.flow-node-edit button:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 2px;
-}
-.flow-port:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-.flow-port.next,
-.flow-port.no {
-  bottom: -13px;
-  left: calc(50% - 13px);
-}
-.flow-port.yes {
-  right: -13px;
-  top: calc(50% - 13px);
-}
-.flow-port:hover:not(:disabled) {
-  border-color: #60a5fa;
-  background: #eff6ff;
-  color: #1d4ed8;
-}
-.flow-port.return {
-  left: -13px;
-  top: calc(50% - 13px);
-  bottom: auto;
-  border-color: #93c5fd;
-  color: #1d4ed8;
-}
-.flow-port.input {
-  top: -13px;
-  left: calc(50% - 13px);
-}
-.flow-port.input span {
-  width: 7px;
-  height: 7px;
-  border: 1px solid currentColor;
-  border-radius: 50%;
-}
-.flow-port.input.ready {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 2px #bfdbfe;
-}
 .flow-node-edit {
   position: absolute;
   bottom: -34px;
@@ -2815,4 +2756,234 @@ body {
   border-top: 1px solid #e2e8f0;
   font-size: 12px;
   line-height: 1.7;
+}
+
+/* Free canvas: direct manipulation, with no circular port buttons. */
+.flow-builder-toolbar p {
+  max-width: 370px;
+  line-height: 1.7;
+}
+.flow-node-palette button {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.flow-help {
+  margin: 8px 0;
+  font-size: 11px;
+  line-height: 1.8;
+  color: #64748b;
+}
+.flow-zoom {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+}
+.flow-zoom span {
+  margin-right: auto;
+}
+.flow-zoom button {
+  padding: 3px 8px;
+  border: 1px solid #dbe5f0;
+  border-radius: 4px;
+}
+.flow-canvas-viewport {
+  max-height: 690px;
+  overscroll-behavior: contain;
+}
+.flow-node-content {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.flow-node-content:active {
+  cursor: grabbing;
+}
+.flow-node-content:focus-visible {
+  outline: 2px dashed #2563eb;
+  outline-offset: 4px;
+}
+.flow-builder-canvas.locked .flow-node-content {
+  cursor: default;
+}
+.flow-builder-canvas.locked .flow-vertex {
+  pointer-events: none;
+}
+.flow-vertex {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: crosshair;
+  transform: translate(-50%, -50%);
+}
+.vertex-top {
+  left: 50%;
+  top: 0;
+}
+.vertex-right {
+  left: 100%;
+  top: 50%;
+}
+.vertex-bottom {
+  left: 50%;
+  top: 100%;
+}
+.vertex-left {
+  left: 0;
+  top: 50%;
+}
+.flow-vertex::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 13px;
+  width: 6px;
+  height: 6px;
+  background: #2563eb;
+  opacity: 0;
+}
+.flow-builder-node:hover .flow-vertex::after,
+.flow-builder-node.selected .flow-vertex::after,
+.connecting .flow-vertex::after {
+  opacity: 1;
+}
+.flow-vertex:hover::after {
+  outline: 4px solid #bfdbfe;
+}
+.flow-branch-label {
+  position: absolute;
+  color: #475569;
+  font-size: 13px;
+  pointer-events: none;
+}
+.branch-yes {
+  left: calc(100% + 8px);
+  top: calc(50% - 24px);
+}
+.branch-no {
+  left: calc(50% + 10px);
+  top: calc(100% + 5px);
+}
+.flow-node-shape.selected rect,
+.flow-node-shape.selected polygon {
+  stroke: #2563eb;
+  stroke-width: 2.5;
+}
+.flow-edge .flow-edge-hit {
+  pointer-events: stroke;
+  cursor: pointer;
+  stroke: transparent;
+  stroke-width: 18;
+}
+.flow-edge.selected > path:first-child {
+  stroke: #7c3aed;
+  stroke-width: 3;
+}
+.flow-edge text {
+  paint-order: stroke;
+  stroke: white;
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.flow-node-edit {
+  bottom: auto;
+  top: -30px;
+  right: 0;
+}
+.flow-builder-node-decision .flow-node-edit {
+  right: 18px;
+}
+.flow-builder-empty {
+  pointer-events: none;
+  line-height: 2;
+}
+.flow-drag-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  background: #eff6ff;
+  border: 1px solid #2563eb;
+  border-radius: 5px;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #1d4ed8;
+}
+.flow-edge-editor {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 5px;
+  font-size: 12px;
+  color: #475569;
+}
+.flow-edge-editor > span {
+  flex-basis: 100%;
+}
+.flow-edge-editor label,
+.flow-edge-editor button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.flow-edge-editor select {
+  padding: 3px 8px;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+}
+
+.flow-connection-note {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  max-width: calc(100vw - 40px);
+  pointer-events: none;
+  box-shadow: 0 4px 18px #33415520;
+}
+.flow-node-content strong {
+  font-size: 18px;
+}
+.flow-node-content small {
+  font-size: 13px;
+}
+.flow-edge text,
+.flow-branch-label {
+  font-size: 17px;
+}
+.flow-builder {
+  scroll-margin-top: 85px;
+}
+
+.flow-builder-expanded {
+  position: fixed;
+  inset: 86px 24px 20px;
+  z-index: 50;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 0 0 100vmax #0f172a66;
+  overflow: auto;
+}
+.flow-builder-expanded .flow-builder-toolbar p {
+  max-width: none;
+}
+.flow-builder-expanded .flow-canvas-viewport {
+  max-height: calc(100vh - 330px);
+}
+@media (max-width: 600px) {
+  .flow-builder-expanded {
+    inset: 80px 5px 5px;
+    padding: 10px;
+  }
 }

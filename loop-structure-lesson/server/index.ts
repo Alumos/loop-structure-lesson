@@ -80,13 +80,11 @@ app.use((req, res, next) => {
     !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
     !allowedOrigin(req, originOptions())
   ) {
-    return res
-      .status(403)
-      .json({
-        error:
-          "来源校验失败，请通过本站页面操作；若使用反向代理，请检查 PUBLIC_ORIGIN 配置",
-        code: "ORIGIN_MISMATCH",
-      });
+    return res.status(403).json({
+      error:
+        "来源校验失败，请通过本站页面操作；若使用反向代理，请检查 PUBLIC_ORIGIN 配置",
+      code: "ORIGIN_MISMATCH",
+    });
   }
   next();
 });
@@ -371,6 +369,8 @@ const planSchema = z.object({
           .enum(["loop-condition", "body-condition", "branch-action"])
           .optional(),
         condition: z.string().max(30).optional(),
+        x: z.number().finite().min(0).max(4000).optional(),
+        y: z.number().finite().min(0).max(4000).optional(),
       }),
     )
     .max(30)
@@ -381,6 +381,8 @@ const planSchema = z.object({
         id: z.string().max(100),
         from: z.string().max(80),
         to: z.string().max(80),
+        fromAnchor: z.enum(["top", "right", "bottom", "left"]).optional(),
+        toAnchor: z.enum(["top", "right", "bottom", "left"]).optional(),
         label: z.enum(["yes", "no"]).optional(),
         kind: z.enum(["normal", "return"]).optional(),
       }),

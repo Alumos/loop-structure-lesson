@@ -2,17 +2,22 @@ export type Timing = "pre" | "post";
 export type FlowNodeKind = "start" | "end" | "action" | "decision";
 export type FlowNodeRole =
   "loop-condition" | "body-condition" | "branch-action";
+export type FlowAnchor = "top" | "right" | "bottom" | "left";
 export type FlowNode = {
   id: string;
   kind: FlowNodeKind;
   block?: string;
   role?: FlowNodeRole;
   condition?: string;
+  x?: number;
+  y?: number;
 };
 export type FlowEdge = {
   id: string;
   from: string;
   to: string;
+  fromAnchor?: FlowAnchor;
+  toAnchor?: FlowAnchor;
   label?: "yes" | "no";
   kind?: "normal" | "return";
 };
@@ -473,8 +478,8 @@ export function validateFlow(l: Level, p: Plan): FlowValidation {
     loop = loops[0];
   if (
     l.id === "l2" &&
-    (nodes.filter((n) => n.role === "body-condition").length !== 1 ||
-      nodes.filter((n) => n.role === "branch-action").length !== 1)
+    (nodes.filter((n) => n.role === "body-condition").length < 1 ||
+      nodes.filter((n) => n.role === "branch-action").length < 1)
   )
     fail("INNER_DECISION", "请补齐“前方危险？”和“左转 90°”两个节点");
   if (new Set(edges.map((e) => e.id)).size !== edges.length)
@@ -619,8 +624,6 @@ export function validateFlow(l: Level, p: Plan): FlowValidation {
     fail("BODY_LIMIT", "循环体最多放 8 个动作，请删去多余节点");
   if (l.id === "l2" && !steps.some((v) => v.block === "fwd"))
     fail("MOVE_REQUIRED", "循环体还需要前进动作");
-  if (l.id === "l3" && steps.map((v) => v.block).join(",") !== "advance,scan")
-    fail("SAMPLE_ORDER", "本关一轮只做两步：到下一样点，再扫描当前样点");
   return result();
 }
 

@@ -1,3 +1,4 @@
+import type { Snapshot } from "../../shared/engine";
 import { compactSnapshot } from "../../shared/records";
 import { api, ApiError } from "./api";
 import { uuid } from "./utils";
@@ -31,17 +32,56 @@ async function transaction<T>(
     tx.onerror = () => reject(tx.error);
   });
 }
+// A synchronous journal covers the brief interval before IndexedDB commits.
+// Reloading during that interval must not discard the last dropped node.
+function journal(participant: string): Job[] {
+  try {
+    return JSON.parse(
+      sessionStorage.getItem(`moon-pending:${participant}`) || "[]",
+    );
+  } catch {
+    return [];
+  }
+}
+function writeJournal(participant: string, entries: Job[]) {
+  try {
+    const key = `moon-pending:${participant}`;
+    if (entries.length) sessionStorage.setItem(key, JSON.stringify(entries));
+    else sessionStorage.removeItem(key);
+  } catch {
+    /* IndexedDB remains the primary queue if session storage is unavailable. */
+  }
+}
+async function persistJob(job: Job) {
+  await transaction("readwrite", (s) => s.put(job));
+  writeJournal(
+    job.participant,
+    journal(job.participant).filter((j) => j.id !== job.id),
+  );
+}
 async function jobs(participant: string) {
+  for (const job of journal(participant)) await persistJob(job);
   return ((await transaction("readonly", (s) => s.getAll())) as Job[])
     .filter((j) => j.participant === participant)
     .sort((a, b) => a.created - b.created || a.id.localeCompare(b.id));
 }
 let serial = Date.now() * 1000;
 export async function enqueue(participant: string, path: string, body: any) {
-  const id = uuid();
-  await transaction("readwrite", (s) =>
-    s.put({ id, participant, created: ++serial, path, body } satisfies Job),
-  );
+  const job: Job = { id: uuid(), participant, created: ++serial, path, body };
+  writeJournal(participant, [...journal(participant), job]);
+  await persistJob(job);
+}
+// Restore edits not yet uploaded before mounting the workspace after a reload.
+export async function pendingSnapshots(
+  participant: string,
+): Promise<Snapshot[]> {
+  return (await jobs(participant))
+    .filter((j) => j.path === "/student/events")
+    .flatMap((j) => j.body.events || [])
+    .filter(
+      (e) => !["pointer", "step"].includes(e.kind) && e.snapshot?.activity,
+    )
+    .map((e) => compactSnapshot(e.snapshot));
 }
 export async function clearJobs(participant: string) {
   const js = await jobs(participant);

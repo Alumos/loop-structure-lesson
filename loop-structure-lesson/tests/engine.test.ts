@@ -135,18 +135,22 @@ test("返回箭头不能错连；内部判断必须完整并合流", () => {
   assert.equal(validateFlow(levels[1], wrong).valid, true);
   assert.equal(simulate("l2", wrong).stop, "out");
 });
-test("第三关限定两个动作的顺序；切换时机不替学生补箭头", () => {
+test("第三关允许重复动作与顺序试错；切换时机不替学生补箭头", () => {
   const wrong = planFromBody("l3", {
     timing: "post",
     condition: "ice",
     body: ["scan", "advance"],
   });
-  assert.equal(
-    validateFlow(levels[2], wrong).issues.some(
-      (e) => e.code === "SAMPLE_ORDER",
-    ),
-    true,
-  );
+  assert.equal(validateFlow(levels[2], wrong).valid, true);
+  assert.equal(simulate("l3", wrong).stop, "notSample");
+  const repeated = planFromBody("l3", {
+    timing: "post",
+    condition: "ice",
+    body: ["advance", "scan", "scan"],
+  });
+  assert.equal(validateFlow(levels[2], repeated).valid, true);
+  assert.ok(simulate("l3", repeated).frames.at(-1)!.scans > 8);
+  assert.equal(simulate("l3", repeated).win, false);
   const incomplete = referencePlan("l3", "pre");
   incomplete.edges = incomplete.edges!.filter((e) => e.kind !== "return");
   assert.deepEqual(

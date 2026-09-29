@@ -13,7 +13,7 @@ import {
   Users,
 } from "lucide-react";
 import { api, connect } from "./lib/api";
-import { enqueue, startQueue, clearJobs } from "./lib/queue";
+import { enqueue, startQueue, clearJobs, pendingSnapshots } from "./lib/queue";
 import { cn, uuid } from "./lib/utils";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -52,7 +52,18 @@ export function Student({ goTeacher }: { goTeacher: () => void }) {
   }, []);
   useEffect(() => {
     api("/student/me")
-      .then(setData)
+      .then(async (d) => {
+        const pending = await pendingSnapshots(d.participant.id).catch(
+          () => [],
+        );
+        if (pending.length) {
+          d.drafts = { ...d.drafts };
+          for (const snapshot of pending)
+            d.drafts[snapshot.activity] = snapshot;
+          d.participant.state = pending[pending.length - 1];
+        }
+        setData(d);
+      })
       .catch(() => load())
       .finally(() => setLoading(false));
   }, [load]);

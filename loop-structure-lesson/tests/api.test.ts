@@ -546,3 +546,84 @@ test("HTTPS 反代改写 Host 后可入班、恢复会话和连接实时画面�
     403,
   );
 });
+
+test("自由画布坐标和连接边缘经过保存、教师读取和提交后保持一致", async () => {
+  const created = await req("/teacher/classrooms", {
+    classId: "demo-5",
+    name: "布局保存",
+  });
+  const joined = await req(
+    "/student/join",
+    { classroomId: created.data.id, studentIds: ["003"] },
+    "",
+  );
+  const cookie = joined.cookie,
+    pid = joined.data.participant.id;
+  const plan = referencePlan("l1");
+  plan.nodes = plan.nodes!.map((n, i) => ({
+    ...n,
+    x: 310 + i * 45,
+    y: 110 + i * 95,
+  }));
+  plan.edges = plan.edges!.map((e) => ({
+    ...e,
+    fromAnchor: "left",
+    toAnchor: "right",
+  }));
+  const saved = await req(
+    "/student/events",
+    {
+      events: [
+        {
+          id: randomUUID(),
+          at: Date.now(),
+          kind: "edit",
+          label: "移动节点",
+          snapshot: { activity: "l1", plan },
+        },
+      ],
+    },
+    cookie,
+  );
+  assert.equal(saved.status, 200);
+  const detail = (await req("/teacher/participants/" + pid)).data;
+  assert.deepEqual(detail.state.plan, JSON.parse(JSON.stringify(plan)));
+  const submit = await req(
+    "/student/attempts",
+    {
+      id: randomUUID(),
+      level: "l1",
+      plan,
+      prediction: "6 轮",
+      assisted: false,
+    },
+    cookie,
+  );
+  assert.equal(submit.status, 200);
+  const after = (await req("/teacher/participants/" + pid)).data;
+  assert.deepEqual(after.attempts[0].plan, JSON.parse(JSON.stringify(plan)));
+  const invalid = {
+    ...plan,
+    nodes: plan.nodes!.map((n) => ({ ...n, x: 9000 })),
+  };
+  assert.equal(
+    (
+      await req(
+        "/student/events",
+        {
+          events: [
+            {
+              id: randomUUID(),
+              at: Date.now(),
+              kind: "edit",
+              label: "无效坐标",
+              snapshot: { activity: "l1", plan: invalid },
+            },
+          ],
+        },
+        cookie,
+      )
+    ).status,
+    400,
+  );
+});
