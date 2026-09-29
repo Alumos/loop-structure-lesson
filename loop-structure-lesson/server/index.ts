@@ -19,6 +19,7 @@ import { z } from "zod";
 import { createRoster, type Roster } from "./roster.js";
 import {
   simulate,
+  validateFlow,
   gradeQuiz,
   levels,
   type Snapshot,
@@ -360,6 +361,32 @@ const planSchema = z.object({
   timing: z.enum(["pre", "post"]),
   condition: z.string().max(30),
   body: z.array(z.string().max(20)).max(8),
+  nodes: z
+    .array(
+      z.object({
+        id: z.string().max(80),
+        kind: z.enum(["start", "end", "action", "decision"]),
+        block: z.string().max(30).optional(),
+        role: z
+          .enum(["loop-condition", "body-condition", "branch-action"])
+          .optional(),
+        condition: z.string().max(30).optional(),
+      }),
+    )
+    .max(30)
+    .optional(),
+  edges: z
+    .array(
+      z.object({
+        id: z.string().max(100),
+        from: z.string().max(80),
+        to: z.string().max(80),
+        label: z.enum(["yes", "no"]).optional(),
+        kind: z.enum(["normal", "return"]).optional(),
+      }),
+    )
+    .max(50)
+    .optional(),
 });
 const frameSchema = z.object({
   x: z.number().int().min(-1).max(20),
@@ -376,6 +403,8 @@ const frameSchema = z.object({
   visited: z.array(z.string().max(10)).max(50),
   scanned: z.array(z.number()).max(20),
   active: z.union([z.number(), z.literal("condition")]).nullable(),
+  nodeId: z.string().max(80).optional(),
+  edgeId: z.string().max(100).optional(),
   text: z.string().max(500),
 });
 const snapshotSchema = z.object({
@@ -547,6 +576,14 @@ app.post("/api/student/attempts", ...student, writable, (req, res) => {
     c = res.locals.classroom;
   if (c.settings.openLevel !== "all" && c.settings.openLevel !== b.level)
     return res.status(403).json({ error: "教师尚未开放此关卡" });
+  const level = levels.find((l) => l.id === b.level);
+  if (!level) return res.status(400).json({ error: "未知关卡" });
+  const check = validateFlow(level, b.plan);
+  if (!check.valid)
+    return res
+      .status(400)
+      .json({ error: check.errors[0], issues: check.issues });
+  b.plan.body = check.body;
   const result = simulate(b.level, b.plan);
   stmt("INSERT OR IGNORE INTO attempts VALUES(?,?,?,?,?,?,?,?,?)").run(
     b.id,

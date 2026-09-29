@@ -2448,3 +2448,371 @@ body {
   outline-offset: 5px;
   border-radius: 2px;
 }
+
+/* Student-built flowchart editor. The canvas owns the layout; students own every edge. */
+.fixed-timing {
+  padding: 10px 12px;
+  border: 1px solid #dbe5f0;
+  border-radius: 7px;
+  background: #f8fbff;
+  color: #37506e;
+  font-size: 13px;
+}
+.flow-builder {
+  border-top: 1px solid #d7dee8;
+  background: #fff;
+  padding: 16px;
+}
+.flow-builder-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.flow-builder-toolbar strong {
+  display: block;
+  color: #172033;
+  font-size: 14px;
+}
+.flow-builder-toolbar p {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+}
+.flow-toolbar-actions {
+  display: flex;
+  gap: 6px;
+}
+.flow-toolbar-actions button,
+.flow-node-edit button,
+.flow-connection-note button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #475569;
+}
+.flow-toolbar-actions button {
+  width: 31px;
+  height: 31px;
+}
+.flow-toolbar-actions button:hover:not(:disabled),
+.flow-node-edit button:hover:not(:disabled) {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.flow-toolbar-actions button:disabled,
+.flow-node-edit button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+.flow-node-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 11px;
+  border: 1px dashed #b8c8dc;
+  border-radius: 7px;
+  background: #f8fafc;
+}
+.flow-node-palette button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+}
+.flow-node-palette button:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.flow-node-palette button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+.flow-canvas-viewport {
+  max-width: 100%;
+  overflow: auto;
+  margin-top: 12px;
+  border: 1px solid #dbe5f0;
+  border-radius: 6px;
+}
+.flow-builder-canvas {
+  position: relative;
+  overflow: hidden;
+  background-color: #fff;
+  background-image:
+    linear-gradient(#e9eef5 1px, transparent 1px),
+    linear-gradient(90deg, #e9eef5 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.flow-builder-edges {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  color: #64748b;
+  pointer-events: none;
+}
+.flow-edge path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.78;
+}
+.flow-edge text {
+  fill: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+.flow-edge-return {
+  color: #2563eb;
+}
+.flow-edge-return path {
+  stroke-width: 2.5;
+}
+.flow-edge-return text {
+  fill: #2563eb;
+}
+.flow-edge.executing path {
+  stroke: #059669;
+  stroke-width: 3;
+  opacity: 1;
+}
+.flow-edge-preview {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+.flow-node-shape rect,
+.flow-node-shape polygon {
+  fill: #fff;
+  stroke: #64748b;
+  stroke-width: 1.5;
+}
+.flow-node-shape polygon {
+  fill: #eff6ff;
+  stroke: #2563eb;
+}
+.flow-node-shape.inner polygon {
+  fill: #fff7ed;
+  stroke: #b45309;
+}
+.flow-node-shape.executing rect,
+.flow-node-shape.executing polygon {
+  fill: #ecfdf5;
+  stroke: #059669;
+  stroke-width: 3;
+}
+.flow-builder-node {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+}
+.flow-node-content {
+  display: flex;
+  position: absolute;
+  inset: 0 12px;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+}
+.flow-builder-node-decision .flow-node-content {
+  inset: 12px 52px;
+}
+.flow-node-content strong {
+  overflow-wrap: anywhere;
+  color: #172033;
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 600;
+}
+.flow-node-content small {
+  color: #64748b;
+  font-size: 10px;
+}
+.flow-port {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid #cbd5e1;
+  border-radius: 50%;
+  background: #fff;
+  color: #475569;
+  font-size: 11px;
+  pointer-events: auto;
+  touch-action: none;
+}
+.flow-port:focus-visible,
+.flow-node-edit button:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+.flow-port:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+.flow-port.next,
+.flow-port.no {
+  bottom: -13px;
+  left: calc(50% - 13px);
+}
+.flow-port.yes {
+  right: -13px;
+  top: calc(50% - 13px);
+}
+.flow-port:hover:not(:disabled) {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.flow-port.return {
+  left: -13px;
+  top: calc(50% - 13px);
+  bottom: auto;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.flow-port.input {
+  top: -13px;
+  left: calc(50% - 13px);
+}
+.flow-port.input span {
+  width: 7px;
+  height: 7px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.flow-port.input.ready {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #bfdbfe;
+}
+.flow-node-edit {
+  position: absolute;
+  bottom: -34px;
+  right: 0;
+  display: flex;
+  gap: 3px;
+  pointer-events: auto;
+}
+.flow-builder-node-decision .flow-node-edit {
+  right: 28px;
+}
+.flow-node-edit button {
+  width: 25px;
+  height: 25px;
+}
+.flow-builder-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(420px, calc(100% - 50px));
+  transform: translate(-50%, -50%);
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+.flow-validation,
+.flow-connection-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 12px;
+}
+.flow-validation svg,
+.flow-connection-note svg {
+  flex-shrink: 0;
+}
+.flow-validation.valid {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #166534;
+}
+.flow-connection-note {
+  justify-content: space-between;
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.flow-connection-note button {
+  width: 24px;
+  height: 24px;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.flow-edge-list {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #475569;
+}
+.flow-edge-list summary {
+  cursor: pointer;
+}
+.flow-edge-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+.flow-edge-list button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.flow-edge-list button:hover {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+.comparison .attempt-row {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.comparison small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 11px;
+}
+.flow-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 0;
+  font-size: 12px;
+  color: #475569;
+}
+.timing-evidence p {
+  padding: 10px 0;
+  border-top: 1px solid #e2e8f0;
+  font-size: 12px;
+  line-height: 1.7;
+}

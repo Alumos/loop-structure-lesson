@@ -8,7 +8,6 @@ import {
   Lightbulb,
   MousePointer2,
   Play,
-  Plus,
   Radio,
   RotateCcw,
   Satellite,
@@ -18,12 +17,16 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
 import {
-  blocks,
   conditions,
   levels,
   quizzes,
   initialFrame,
   initialPlan,
+  planFromBody,
+  referencePlan,
+  retimeFlow,
+  simulate,
+  validateFlow,
   type Snapshot,
   type Plan,
   type Level,
@@ -147,10 +150,15 @@ export function Exercise({
   s = restoreSnapshot(s);
   const l = levels.find((l) => l.id === s.activity);
   if (!l) return null;
-  const plan = s.plan || initialPlan(l.id),
+  const plan =
+      s.plan && s.plan.nodes !== undefined
+        ? s.plan
+        : readonly && s.plan
+          ? planFromBody(l.id, s.plan)
+          : initialPlan(l.id),
     frame = s.frame || initialFrame(l);
+  const flowValidation = validateFlow(l, plan);
   const edit = (p: Plan) => {
-    if (p.body.some((b) => !l.blocks.includes(b))) return;
     onChange(
       { plan: p, frame: initialFrame(l), running: false, result: undefined },
       "edit",
@@ -221,7 +229,7 @@ export function Exercise({
           <div className="flex flex-wrap gap-2">
             <Button
               className="flex-1"
-              disabled={readonly || !s.prediction || !plan.body.length}
+              disabled={readonly || !s.prediction || !flowValidation.valid}
               onClick={s.running ? onStop : onRun}
             >
               {s.running ? <Square /> : <Play />}
@@ -258,7 +266,7 @@ export function Exercise({
           </div>
           {!s.prediction && (
             <p className="text-xs text-muted-foreground">
-              先留下你的预测，就可以开始模拟。
+              先留下预测，再完成流程图。
             </p>
           )}
           {s.hint && <div className="hint-panel">{l.hint}</div>}
@@ -266,7 +274,7 @@ export function Exercise({
             <span className="live-dot" />
             {frame.text}
           </div>
-          {attempts.length > 0 && (
+          {l.timingMode === "compare" && attempts.length > 0 && (
             <div className="comparison">
               <div className="section-label">我的对照记录</div>
               {(["pre", "post"] as const).map((t) => {
@@ -274,10 +282,28 @@ export function Exercise({
                   (a) => a.level === l.id && a.plan.timing === t,
                 );
                 const a = matching[matching.length - 1];
+                let final: Frame | undefined;
+                if (a) {
+                  try {
+                    const frames = simulate(l.id, a.plan).frames;
+                    final = frames[frames.length - 1];
+                  } catch {
+                    /* Retain old recorded results. */
+                  }
+                }
                 return (
-                  <div key={t}>
+                  <div key={t} className="attempt-row">
                     <span>{t === "pre" ? "先判断" : "先执行"}</span>
-                    <strong>{a ? a.reason : "尚未运行"}</strong>
+                    <div>
+                      <strong>{a ? a.reason : "尚未运行"}</strong>
+                      {final && (
+                        <small>
+                          {final.rounds} 轮 · 第 {final.x + 1} 列、第{" "}
+                          {final.y + 1} 行 · 朝
+                          {["东", "南", "西", "北"][final.d]}
+                        </small>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -300,7 +326,7 @@ export function Exercise({
             />
           </label>
         </div>
-        <Card className="designer">
+        <div className="designer">
           <div className="designer-heading">
             <div>
               <span className="section-label">巡视方案</span>
@@ -308,7 +334,7 @@ export function Exercise({
                 反复做什么，依据什么停止？
               </p>
             </div>
-            <span className="small-tag">{plan.body.length} / 8 积木</span>
+            <span className="small-tag">{plan.nodes?.length || 0} 个节点</span>
           </div>
           <div className="p-4 space-y-4">
             <label className="field-label">
@@ -316,7 +342,14 @@ export function Exercise({
               <select
                 disabled={readonly || s.running}
                 value={plan.condition}
-                onChange={(e) => edit({ ...plan, condition: e.target.value })}
+                onChange={(e) => {
+                  const next = initialPlan(l.id);
+                  edit({
+                    ...next,
+                    timing: plan.timing,
+                    condition: e.target.value,
+                  });
+                }}
               >
                 {l.conditions.map((c) => (
                   <option value={c} key={c}>
@@ -325,38 +358,36 @@ export function Exercise({
                 ))}
               </select>
             </label>
-            <div className="segmented">
-              {(["pre", "post"] as const).map((t) => (
-                <button
-                  key={t}
-                  disabled={readonly || s.running}
-                  className={plan.timing === t ? "selected" : ""}
-                  onClick={() => edit({ ...plan, timing: t })}
-                >
-                  {t === "pre" ? "先判断，再执行" : "先执行，再判断"}
-                </button>
-              ))}
-            </div>
-            <div className="palette">
-              {l.blocks.map((id) => (
-                <button
-                  key={id}
-                  draggable={!readonly && !s.running}
-                  onDragStart={(e) => e.dataTransfer.setData("text/plain", id)}
-                  disabled={readonly || s.running || plan.body.length >= 8}
-                  onClick={() => edit({ ...plan, body: [...plan.body, id] })}
-                >
-                  <Plus size={13} />
-                  {blocks[id]}
-                </button>
-              ))}
-            </div>
+            {l.timingMode === "compare" ? (
+              <div className="segmented">
+                {(["pre", "post"] as const).map((t) => (
+                  <button
+                    key={t}
+                    disabled={readonly || s.running}
+                    className={plan.timing === t ? "selected" : ""}
+                    onClick={() => edit(retimeFlow(l, plan, t))}
+                  >
+                    {t === "pre" ? "先判断，再执行" : "先执行，再判断"}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="fixed-timing">本关统一使用：先判断，再执行</div>
+            )}
+            {l.timingMode === "compare" && (
+              <p className="text-xs text-muted-foreground">
+                循环体保持不变，只比较判断位置。
+              </p>
+            )}
           </div>
           <Flow
+            key={l.id}
+            level={l}
             plan={plan}
-            active={frame.active}
+            frame={frame}
             onPlan={edit}
-            readonly={readonly || !!s.running}
+            readonly={readonly}
+            disabled={!!s.running}
           />
           {answersOpen && (
             <div className="p-4 border-t">
@@ -367,8 +398,10 @@ export function Exercise({
                 onClick={() =>
                   onChange(
                     {
-                      plan: { ...l.answer, body: [...l.answer.body] },
+                      plan: referencePlan(l.id),
                       frame: initialFrame(l),
+                      result: undefined,
+                      running: false,
                       hint: true,
                     },
                     "hint",
@@ -380,7 +413,7 @@ export function Exercise({
               </Button>
             </div>
           )}
-        </Card>
+        </div>
       </div>
     </div>
   );
@@ -608,8 +641,8 @@ export function Review({
 }) {
   const labels = [
     "我先预测，再运行",
-    "我能用结果解释并修正方案",
-    "我参与轮换合作，能说明本组方案",
+    "我能补齐流程图，说明返回箭头回到哪里",
+    "我能根据结果修正方案，参与合作说明",
     "我如实记录失败与未知",
   ];
   return (

@@ -1,4 +1,4 @@
-import { compactSnapshot } from "../shared/records";
+import { compactSnapshot, editableSnapshot } from "../shared/records";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CheckCircle2,
@@ -31,6 +31,7 @@ import {
   initialPlan,
   initialFrame,
   simulate,
+  validateFlow,
   type Snapshot,
   activityNames,
 } from "../shared/engine";
@@ -265,7 +266,7 @@ function Workspace({
   const [snapshot, setSnapshot] = useState<Snapshot>(() => {
     const saved = p.state as Snapshot | null;
     return saved?.activity.startsWith("l")
-      ? { ...saved, running: false }
+      ? editableSnapshot(saved)
       : fresh("l1", p.members[0].id);
   });
   const [pending, setPending] = useState(0),
@@ -415,6 +416,11 @@ function Workspace({
   async function run() {
     const s = ref.current;
     if (!s.plan || !s.prediction) return;
+    const l = levels.find((v) => v.id === s.activity);
+    if (l) {
+      const check = validateFlow(l, s.plan);
+      if (!check.valid) throw new Error(check.errors[0] || "请先完成流程图");
+    }
     const result = simulate(s.activity, s.plan),
       token = ++runToken.current;
     change({ running: true, result: undefined }, "run", "开始模拟");
@@ -442,7 +448,7 @@ function Workspace({
     drafts.current[ref.current.activity] = { ...ref.current, running: false };
     const next = id.startsWith("q")
       ? fresh(id, p.members[0].id)
-      : drafts.current[id] || fresh(id, p.members[0].id);
+      : editableSnapshot(drafts.current[id] || fresh(id, p.members[0].id));
     if (pendingText.current) {
       clearTimeout(pendingText.current);
       emit(ref.current, "explain", "保存学习记录");
@@ -681,6 +687,7 @@ function Workspace({
                 }}
                 readonly={!editable}
                 answersOpen={c.settings.answersOpen}
+                attempts={attempts}
               />
             ) : snapshot.activity.startsWith("q") ? (
               <QuizView
@@ -705,35 +712,12 @@ function Workspace({
               />
             )}
           </div>
-          {snapshot.activity.startsWith("l") &&
-            attempts.filter((a) => a.level === snapshot.activity).length >
-              0 && (
-              <Card className="p-4 mt-5">
-                <div className="section-label mb-3">
-                  运行对照 · 保留每次尝试
-                </div>
-                {attempts
-                  .filter((a) => a.level === snapshot.activity)
-                  .slice(-6)
-                  .map((a, i) => (
-                    <div key={i} className="attempt-row">
-                      <span>
-                        {a.plan.timing === "pre" ? "先判断" : "先执行"}
-                      </span>
-                      <span>{a.reason}</span>
-                      <span className="small-tag">
-                        {a.assisted ? "提示后尝试" : "自主尝试"}
-                      </span>
-                    </div>
-                  ))}
-              </Card>
-            )}
           {results && snapshot.activity.startsWith("q") && (
             <Card className="p-5 mt-6">
               <h3 className="font-semibold">统一讲评</h3>
               <p className="text-sm mt-3">
                 {snapshot.activity === "q1"
-                  ? "循环体为取样＋放入盒；停止条件是盒中已有 3 个样本。"
+                  ? "一轮是取样＋放入盒；判断盒中是否已有 3 个样本。否：返回取样；是：结束。"
                   : snapshot.activity === "q2"
                     ? "先判断再执行，0 轮。起初已经到站，停止条件成立。"
                     : "先拍照后判断，拍 1 张。先拍才有照片，第一张清晰就停止。"}

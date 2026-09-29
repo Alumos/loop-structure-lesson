@@ -1,4 +1,23 @@
-import { initialFrame, levels, simulate, type Snapshot } from "./engine";
+import {
+  initialFrame,
+  initialPlan,
+  levels,
+  simulate,
+  type Snapshot,
+} from "./engine";
+
+export function editableSnapshot(s: Snapshot): Snapshot {
+  const l = levels.find((l) => l.id === s.activity);
+  if (l && s.plan?.nodes === undefined)
+    return {
+      ...s,
+      plan: initialPlan(l.id),
+      frame: initialFrame(l),
+      result: undefined,
+      running: false,
+    };
+  return { ...s, running: false };
+}
 
 // Persist learning decisions, not animation frames or mouse samples.
 export function compactSnapshot(s: Snapshot): Snapshot {
@@ -24,6 +43,7 @@ export function restoreSnapshot(s: Snapshot): Snapshot {
       frame = frames[frames.length - 1] || frame;
     } catch {
       /* Old invalid plans still show their recorded text. */
+      frame.text = s.result;
     }
   }
   return { ...s, frame, running: false };

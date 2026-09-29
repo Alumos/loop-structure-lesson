@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { request as httpRequest } from "node:http";
 import WebSocket from "ws";
-import { levels, simulate } from "../shared/engine.js";
+import { levels, referencePlan, simulate } from "../shared/engine.js";
 const dir = mkdtempSync(join(tmpdir(), "moon-api-")),
   port = 19341,
   base = `http://127.0.0.1:${port}`;
@@ -131,7 +131,7 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
   const attempt = {
     id: randomUUID(),
     level: "l1",
-    plan: levels[0].answer,
+    plan: referencePlan("l1"),
     prediction: "6 轮",
     assisted: false,
   };
@@ -140,6 +140,47 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
   let detail = await req("/teacher/participants/" + participant);
   assert.equal(detail.data.attempts.length, 1);
   assert.equal(detail.data.attempts[0].win, 1);
+  assert.deepEqual(
+    detail.data.attempts[0].plan.nodes,
+    JSON.parse(JSON.stringify(attempt.plan.nodes)),
+  );
+  assert.deepEqual(detail.data.attempts[0].plan.edges, attempt.plan.edges);
+  const invalid = {
+    ...attempt,
+    id: randomUUID(),
+    plan: {
+      ...attempt.plan,
+      edges: attempt.plan.edges!.filter((e) => e.kind !== "return"),
+    },
+  };
+  assert.equal(
+    (await req("/student/attempts", invalid, studentCookie)).status,
+    400,
+  );
+  assert.equal(
+    (
+      await req(
+        "/student/attempts",
+        { ...attempt, id: randomUUID(), plan: levels[0].answer },
+        studentCookie,
+      )
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await req(
+        "/student/attempts",
+        {
+          ...attempt,
+          id: randomUUID(),
+          plan: { ...attempt.plan, timing: "post" },
+        },
+        studentCookie,
+      )
+    ).status,
+    400,
+  );
   const answer = {
     id: randomUUID(),
     studentId: "001",
@@ -311,7 +352,7 @@ test("事件数量上限与到期清理保留近期成绩，删除过期小组",
     {
       id: randomUUID(),
       level: "l1",
-      plan: levels[0].answer,
+      plan: referencePlan("l1"),
       prediction: "6 轮",
       assisted: false,
     },

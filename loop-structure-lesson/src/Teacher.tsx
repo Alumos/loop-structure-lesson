@@ -33,7 +33,7 @@ import {
   DialogDescription,
 } from "./components/ui/dialog";
 import { Screen } from "./components/Exercise";
-import { activityNames, levels, quizzes } from "../shared/engine";
+import { activityNames, levels, quizzes, validateFlow } from "../shared/engine";
 export function Teacher({ goStudent }: { goStudent: () => void }) {
   const [user, setUser] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
@@ -845,6 +845,11 @@ function Detail({
       ...m,
       name: anonymous ? `顾问 ${i + 1}` : m.name,
     }));
+  const currentLevel = levels.find((l) => l.id === snapshot?.activity),
+    flowCheck =
+      currentLevel && snapshot?.plan?.nodes
+        ? validateFlow(currentLevel, snapshot.plan)
+        : null;
   return (
     <div>
       <div className="detail-heading">
@@ -1015,6 +1020,40 @@ function Detail({
           </div>
         )}
       </Card>
+      {flowCheck && (
+        <div className="flow-evidence">
+          <span>
+            外层判断：
+            {snapshot.plan.nodes.filter((n: any) => n.role === "loop-condition")
+              .length === 1
+              ? "已摆放"
+              : "待补齐"}
+          </span>
+          {currentLevel?.id === "l2" && (
+            <span>
+              内部分支：
+              {flowCheck.issues.some((v) =>
+                ["INNER_DECISION", "BRANCH", "TURN_BRANCH", "MERGE"].includes(
+                  v.code,
+                ),
+              )
+                ? "待补齐"
+                : "已连接"}
+            </span>
+          )}
+          <span>
+            返回箭头：
+            {snapshot.plan.edges?.filter((e: any) => e.kind === "return")
+              .length === 1 &&
+            !flowCheck.issues.some((v) =>
+              ["RETURN", "RETURN_TARGET", "REPEAT_BRANCH"].includes(v.code),
+            )
+              ? "已连接"
+              : "待检查"}
+          </span>
+          <strong>{flowCheck.valid ? "流程完整" : "流程待完善"}</strong>
+        </div>
+      )}
       {detail && (
         <div className="detail-records">
           <Card className="p-5">
@@ -1049,7 +1088,12 @@ function Detail({
                   <div>
                     <strong>
                       {activityNames[a.level]} ·{" "}
-                      {a.plan.timing === "pre" ? "先判断" : "先执行"}
+                      {levels.find((l) => l.id === a.level)?.timingMode ===
+                      "compare"
+                        ? a.plan.timing === "pre"
+                          ? "先判断"
+                          : "先执行"
+                        : "固定先判断"}
                     </strong>
                     <p>{a.reason}</p>
                     <small>
@@ -1059,6 +1103,39 @@ function Detail({
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="timing-evidence">
+              {levels
+                .filter((l) => l.timingMode === "compare")
+                .map((l) => {
+                  const records = detail.attempts.filter(
+                      (a: any) =>
+                        a.level === l.id &&
+                        a.plan.nodes &&
+                        validateFlow(l, a.plan).valid,
+                    ),
+                    pre = records.filter((a: any) => a.plan.timing === "pre"),
+                    post = records.filter((a: any) => a.plan.timing === "post"),
+                    compared = pre.some((a: any) =>
+                      post.some(
+                        (b: any) =>
+                          a.plan.condition === b.plan.condition &&
+                          validateFlow(l, a.plan).body.join(",") ===
+                            validateFlow(l, b.plan).body.join(","),
+                      ),
+                    );
+                  return (
+                    <p key={l.id}>
+                      <strong>{l.title}</strong> · 先判断 {pre.length} 次 ·
+                      先执行 {post.length} 次<br />
+                      <span>
+                        {compared
+                          ? "已用同一循环体完成对照"
+                          : "尚未完成同一方案的对照"}
+                      </span>
+                    </p>
+                  );
+                })}
             </div>
             {detail.answers.map((a: any) => (
               <div className="answer-record" key={a.id}>
@@ -1081,7 +1158,8 @@ function Detail({
           <Card className="p-5">
             <h2 className="font-semibold">过程表现 · 教师核定</h2>
             <p className="text-xs text-muted-foreground mt-2 mb-4">
-              结合预测、修正、合作和如实记录的证据，每项 1 分，共 4 分。
+              结合预测、流程图与返回箭头、修正与合作、如实记录四项证据，每项 1
+              分，共 4 分。
             </p>
             <label className="field-label">
               学生
