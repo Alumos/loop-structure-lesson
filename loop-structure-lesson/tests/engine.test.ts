@@ -94,6 +94,7 @@ test("第一二关固定先判断，第三四关才允许比较时机", () => {
 });
 test("验收三题各 2 分，错误理由不会给满分", () => {
   assert.equal(gradeQuiz("q1", [1, 1]), 2);
+  assert.equal(gradeQuiz("q1", [1, 0]), 1);
   assert.equal(gradeQuiz("q2", [0, 1]), 2);
   assert.equal(gradeQuiz("q3", [1, 0]), 2);
   assert.equal(gradeQuiz("q3", [1, 1]), 1);

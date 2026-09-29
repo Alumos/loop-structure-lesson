@@ -180,7 +180,7 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await student
     .getByRole("button", { name: /取一个样本 ＋ 放入样本盒/ })
     .click();
-  await student.getByRole("button", { name: /盒中已有 3 个样本？/ }).click();
+  await student.getByRole("button", { name: /否回到取样/ }).click();
   await student.getByRole("button", { name: "提交本题" }).click();
   await expect(
     student.getByRole("button", { name: "已提交，等待讲评" }),
@@ -193,7 +193,7 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await student
     .getByRole("button", { name: /取一个样本 ＋ 放入样本盒/ })
     .click();
-  await student.getByRole("button", { name: /盒中已有 3 个样本？/ }).click();
+  await student.getByRole("button", { name: /否回到取样/ }).click();
   await student.getByRole("button", { name: "提交本题" }).click();
   await expect(
     page.getByRole("row").filter({ hasText: "演示学生甲 / 演示学生乙" }),
