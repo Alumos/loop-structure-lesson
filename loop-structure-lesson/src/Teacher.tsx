@@ -7,6 +7,7 @@ import {
   Database,
   Download,
   Eye,
+  Pencil,
   FolderClock,
   GraduationCap,
   LayoutDashboard,
@@ -33,7 +34,8 @@ import {
   DialogDescription,
 } from "./components/ui/dialog";
 import { Screen } from "./components/Exercise";
-import { activityNames, levels, quizzes, validateFlow } from "../shared/engine";
+import { Flow } from "./components/Flow";
+import { activityNames, levels, quizzes, validateFlow, referencePlan, initialFrame, type Plan } from "../shared/engine";
 export function Teacher({ goStudent }: { goStudent: () => void }) {
   const [user, setUser] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
@@ -227,7 +229,7 @@ function Dashboard({ user, logout }: { user: string; logout: () => void }) {
   const cl = roster?.data.classes.find((c: any) => c.id === room?.class_id),
     joined = summary.reduce((n, p) => n + p.members.length, 0),
     passed = summary.filter(
-      (p) => p.attempts.filter((a: any) => a.passed).length === 4,
+      (p) => p.attempts.filter((a: any) => a.passed).length === levels.length,
     ).length,
     answered = summary.reduce((n, p) => n + p.answers.length, 0),
     attention = (p: any) =>
@@ -238,7 +240,7 @@ function Dashboard({ user, logout }: { user: string; logout: () => void }) {
       (filter === "all" ||
         (filter === "attention" && attention(p)) ||
         (filter === "complete" &&
-          p.attempts.filter((a: any) => a.passed).length === 4)),
+          p.attempts.filter((a: any) => a.passed).length === levels.length)),
   );
   return (
     <div className="workspace teacher-workspace">
@@ -401,7 +403,7 @@ function Dashboard({ user, logout }: { user: string; logout: () => void }) {
                       note={`${summary.length} 个独立席位或合作小组`}
                     />
                     <Stat
-                      label="四关全部完成"
+                      label="三关全部完成"
                       value={String(passed)}
                       icon={<FlagIcon />}
                       note="按练习小组统计"
@@ -518,7 +520,7 @@ function Dashboard({ user, logout }: { user: string; logout: () => void }) {
                         >
                           <option value="all">全部学生</option>
                           <option value="attention">需要关注</option>
-                          <option value="complete">四关完成</option>
+                          <option value="complete">三关完成</option>
                         </select>
                       </div>
                     </div>
@@ -789,6 +791,10 @@ function Detail({
     [score, setScore] = useState(0),
     [note, setNote] = useState(""),
     [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState(false),
+    [showAnswer, setShowAnswer] = useState(false),
+    [workingPlan, setWorkingPlan] = useState<Plan | null>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
   const load = useCallback(
     () =>
       api(`/teacher/participants/${id}`)
@@ -850,6 +856,13 @@ function Detail({
       currentLevel && snapshot?.plan?.nodes
         ? validateFlow(currentLevel, snapshot.plan)
         : null;
+  const correct = (plan: Plan) => {
+    setWorkingPlan(plan);
+    saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
+      const response = await api(`/teacher/participants/${id}/plan`, { plan }, "PATCH");
+      setDetail((previous: any) => previous && { ...previous, state: response.snapshot });
+    }).catch((error: Error) => onError(error.message));
+  };
   return (
     <div>
       <div className="detail-heading">
@@ -988,8 +1001,27 @@ function Detail({
           </select>
         </Card>
       )}
+      {mode === "live" && currentLevel && snapshot?.plan && (
+        <div className="teacher-flow-tools">
+          <div className="teacher-flow-actions">
+            <strong>学生流程图</strong>
+            <div className="flex gap-2">
+              <Button size="sm" variant={editing ? "default" : "outline"} onClick={() => {
+                if (!editing) setWorkingPlan(snapshot.plan);
+                setEditing(!editing);
+                setShowAnswer(false);
+              }}><Pencil size={15}/>{editing ? "完成修正" : "修正流程图"}</Button>
+              <Button size="sm" variant={showAnswer ? "default" : "outline"} onClick={() => setShowAnswer(!showAnswer)}>
+                <Eye size={15}/>{showAnswer ? "收起标准答案" : "显示标准答案"}
+              </Button>
+            </div>
+          </div>
+          {showAnswer && <Flow level={currentLevel} plan={referencePlan(currentLevel.id)} frame={initialFrame(currentLevel)} onPlan={() => {}} readonly />}
+          {editing && !showAnswer && <Flow key={`${id}-${currentLevel.id}`} level={currentLevel} plan={workingPlan || snapshot.plan} frame={initialFrame(currentLevel)} onPlan={correct} readonly={false} />}
+        </div>
+      )}
       <Card className="p-4 mb-4">
-        <div className="section-label mb-3">先预测，再运行 · 各关预测答案</div>
+        <div className="section-label mb-3">各关预测记录</div>
         <div className="grid grid-cols-2 gap-3">
           {levels.map((l) => {
             const recorded = detail?.predictions?.find(
@@ -1010,7 +1042,7 @@ function Detail({
           })}
         </div>
       </Card>
-      <Card className="monitor-frame">
+      {!editing && <Card className="monitor-frame">
         {snapshot ? (
           <Screen snapshot={snapshot} members={members} />
         ) : (
@@ -1019,7 +1051,7 @@ function Detail({
             <p>学生尚未开始操作。</p>
           </div>
         )}
-      </Card>
+      </Card>}
       {flowCheck && (
         <div className="flow-evidence">
           <span>
@@ -1086,15 +1118,7 @@ function Detail({
                     {a.win ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
                   </span>
                   <div>
-                    <strong>
-                      {activityNames[a.level]} ·{" "}
-                      {levels.find((l) => l.id === a.level)?.timingMode ===
-                      "compare"
-                        ? a.plan.timing === "pre"
-                          ? "先判断"
-                          : "先执行"
-                        : "固定先判断"}
-                    </strong>
+                    <strong>{activityNames[a.level]}{levels.find((l) => l.id === a.level)?.timingMode === "compare" ? ` · ${a.plan.timing === "pre" ? "先判断" : "先执行"}` : ""}</strong>
                     <p>{a.reason}</p>
                     <small>
                       预测：{a.prediction} ·{" "}

@@ -31,7 +31,6 @@ import {
   initialPlan,
   initialFrame,
   simulate,
-  validateFlow,
   type Snapshot,
   activityNames,
 } from "../shared/engine";
@@ -106,7 +105,7 @@ export function Student({ goTeacher }: { goTeacher: () => void }) {
             <div className="orbit-ring" />
             <div className="moon-sphere" />
             <Satellite className="orbit-satellite" size={52} />
-            <span className="orbit-coordinate">南极巡视区 / 04 个探索任务</span>
+            <span className="orbit-coordinate">南极巡视区 / 03 个探索任务</span>
           </div>
         </div>
         <span className="hero-footer">嫦娥七号主题 · 月面地图为教学模拟</span>
@@ -276,7 +275,7 @@ function Workspace({
     c = data.classroom;
   const [snapshot, setSnapshot] = useState<Snapshot>(() => {
     const saved = p.state as Snapshot | null;
-    return saved?.activity.startsWith("l")
+    return saved?.activity.startsWith("l") && levels.some(l => l.id === saved.activity)
       ? editableSnapshot(saved)
       : fresh("l1", p.members[0].id);
   });
@@ -383,6 +382,14 @@ function Workspace({
         }
         if (v.type === "replaced")
           reset("该姓名已在另一台设备进入，请确认当前操作设备");
+        if (v.type === "teacher-plan" && v.data.id === p.id) {
+          runToken.current++;
+          const incoming = editableSnapshot(v.data.snapshot);
+          drafts.current[incoming.activity] = incoming;
+          ref.current = incoming;
+          setSnapshot(incoming);
+          setData({ ...dataRef.current, participant: { ...dataRef.current.participant, state: incoming } });
+        }
         if (v.type === "classroom") {
           setData({ ...dataRef.current, classroom: v.data });
           if (
@@ -426,12 +433,7 @@ function Workspace({
   }, [c.settings.answersOpen, submitted.length]);
   async function run() {
     const s = ref.current;
-    if (!s.plan || !s.prediction) return;
-    const l = levels.find((v) => v.id === s.activity);
-    if (l) {
-      const check = validateFlow(l, s.plan);
-      if (!check.valid) throw new Error(check.errors[0] || "请先完成流程图");
-    }
+    if (!s.plan) return;
     const result = simulate(s.activity, s.plan),
       token = ++runToken.current;
     change({ running: true, result: undefined }, "run", "开始模拟");
@@ -445,7 +447,7 @@ function Workspace({
       id: uuid(),
       level: s.activity,
       plan: s.plan,
-      prediction: s.prediction,
+      prediction: s.prediction || "未预测",
       assisted: !!s.hint || c.settings.answersOpen,
     };
     setAttempts((a) => [

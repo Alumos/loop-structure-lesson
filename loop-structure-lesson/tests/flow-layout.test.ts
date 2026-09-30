@@ -16,7 +16,7 @@ test("自动吸附优先贴近节点中心，否则贴合网格；排除正在�
   });
   assert.equal(snapPoint({ x: 348, y: 350 }, peers, "b", 12).x, 340);
 });
-test("整理四关只改布局与连接边缘，保留学生原有的箭头、标签和执行顺序", () => {
+test("整理三关只改布局与连接边缘，保留学生原有的箭头、标签和执行顺序", () => {
   for (const level of levels) {
     const plan = referencePlan(level.id),
       arranged = arrangeFlow(plan);

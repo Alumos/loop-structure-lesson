@@ -120,7 +120,7 @@ const commonPalette = (
   },
   { id: "end", label: "结束", kind: "end" },
 ];
-export const levels: Level[] = [
+const lessonCatalog: Level[] = [
   {
     id: "l1",
     title: "建立中继通信",
@@ -250,6 +250,9 @@ export const levels: Level[] = [
     },
   },
 ];
+// Existing water-ice records remain readable, but this lesson presents three tasks.
+export const levels = lessonCatalog.filter((level) => level.id !== "l3");
+export const getLevel = (id: string) => lessonCatalog.find((level) => level.id === id);
 
 function makeNode(
   id: string,
@@ -406,7 +409,7 @@ export function retimeFlow(l: Level, p: Plan, timing: Timing): Plan {
 }
 
 export function referencePlan(id: string, timing?: Timing): Plan {
-  const l = levels.find((v) => v.id === id);
+  const l = getLevel(id);
   if (!l) throw new Error("未知关卡");
   const base = { ...l.answer, timing: timing || l.answer.timing };
   return { ...base, ...graphForBody(l, base) };
@@ -416,7 +419,7 @@ export function planFromBody(
   id: string,
   p: Pick<Plan, "timing" | "condition" | "body">,
 ): Plan {
-  const l = levels.find((v) => v.id === id);
+  const l = getLevel(id);
   if (!l) throw new Error("未知关卡");
   const base: Plan = {
     timing: p.timing,
@@ -452,7 +455,7 @@ export function validateFlow(l: Level, p: Plan): FlowValidation {
   if (!l.conditions.includes(p.condition))
     fail("CONDITION", "请选择本关的停止条件");
   if (l.timingMode === "fixed-pre" && p.timing !== "pre")
-    fail("TIMING", "本关统一使用“先判断，再执行”");
+    fail("TIMING", "判断位置不符合这关任务");
   for (const n of nodes) {
     const allowed =
       n.role === "loop-condition"
@@ -628,7 +631,7 @@ export function validateFlow(l: Level, p: Plan): FlowValidation {
 }
 
 export function initialPlan(id: string): Plan {
-  const l = levels.find((l) => l.id === id)!;
+  const l = getLevel(id)!;
   return {
     timing: "pre",
     condition: l.conditions[0],
@@ -656,20 +659,126 @@ export function initialFrame(l: Level): Frame {
     text: "等待你的巡视方案",
   };
 }
+
+function simulateGraph(l: Level, plan: Plan): Simulation {
+  const nodes = plan.nodes || [], edges = plan.edges || [], byId = new Map(nodes.map(n => [n.id, n]));
+  const state = initialFrame(l), frames: Frame[] = [];
+  const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const names = ["东", "南", "西", "北"];
+  const inside = (x: number, y: number) => x >= 0 && x < l.cols && y >= 0 && y < l.rows;
+  const push = (text: string, node?: FlowNode, edge?: FlowEdge) => {
+    state.text = text;
+    state.nodeId = node?.id;
+    state.edgeId = edge?.id;
+    state.active = node?.role === "loop-condition" ? "condition" : null;
+    frames.push({ ...state, visited: [...state.visited], scanned: [...state.scanned] });
+  };
+  const condition = (key: string) => {
+    if (key === "home") return state.x === l.start[0] && state.y === l.start[1] && state.d === l.start[2];
+    if (key === "battery") return state.battery < 2;
+    if (key === "ice") return state.scanResult;
+    return !!l.target && state.x === l.target[0] && state.y === l.target[1];
+  };
+  let node = nodes.find(n => n.kind === "start"), incoming: FlowEdge | undefined;
+  let stop = "", reason = "", reachedStop = false, actionsThisRound = 0;
+  const visitedThisRound = new Set<string>();
+  const halt = (code: string, message: string) => { stop = code; reason = message; push(message, node, incoming); };
+  if (!node) halt("broken", "没有“开始”节点，巡视器还不能出发");
+  for (let transitions = 0; node && !stop && transitions < 400; transitions++) {
+    if (node.kind === "end") {
+      stop = reachedStop ? "condition" : "earlyEnd";
+      reason = reachedStop ? "" : "到达“结束”，但还没有满足停止条件";
+      push(reason || "到达“结束”", node, incoming);
+      break;
+    }
+    if (node.kind === "start") {
+      push("从“开始”出发", node, incoming);
+    } else if (node.kind === "decision") {
+      const key = node.role === "loop-condition" ? node.condition || plan.condition : "hazard";
+      if (key !== "hazard" && !l.conditions.includes(key)) { halt("broken", "判断条件不属于这一关"); break; }
+      let answer: boolean | null;
+      if (key === "hazard") {
+        const x = state.x + dirs[state.d][0], y = state.y + dirs[state.d][1];
+        answer = !inside(x, y) || l.craters.includes(`${x},${y}`);
+      } else answer = condition(key);
+      push(`判断“${key === "hazard" ? "前方危险？" : conditions[key]}”：${answer === null ? "还没有数据" : answer ? "是" : "否"}`, node, incoming);
+      if (answer === null) { halt("noData", "这里还没有可判断的数据"); break; }
+      if (node.role === "loop-condition") {
+        if (answer) reachedStop = true;
+        else {
+          if (actionsThisRound === 0 && state.rounds > 0) { halt("endless", "判断后又回到判断，没有执行动作"); break; }
+          state.rounds++;
+          actionsThisRound = 0;
+          visitedThisRound.clear();
+        }
+      }
+      const choices = edges.filter(e => e.from === node!.id && e.label === (answer ? "yes" : "no"));
+      if (choices.length !== 1) { halt("broken", `“${answer ? "是" : "否"}”分支需要一条箭头`); break; }
+      incoming = choices[0];
+      if (!byId.has(incoming.to)) { halt("broken", "箭头没有接到图形上"); break; }
+      node = byId.get(incoming.to);
+      continue;
+    } else if (node.kind === "action" && node.block) {
+      if (!l.blocks.includes(node.block) && node.role !== "branch-action") { halt("broken", "这个动作不属于本关"); break; }
+      if (visitedThisRound.has(node.id)) { halt("endless", "箭头在动作之间打转，没有回到判断"); break; }
+      visitedThisRound.add(node.id);
+      if (state.rounds === 0) state.rounds = 1;
+      if (state.battery <= 0) { halt("noPower", "电量耗尽"); break; }
+      state.battery--; state.steps++; actionsThisRound++;
+      if (node.block === "fwd") {
+        const x = state.x + dirs[state.d][0], y = state.y + dirs[state.d][1];
+        if (!inside(x, y)) { halt("out", `第 ${state.rounds} 轮：向${names[state.d]}前进，越过地图边界`); break; }
+        state.x = x; state.y = y; state.moves++;
+        if (!state.visited.includes(`${x},${y}`)) state.visited.push(`${x},${y}`);
+        push(`第 ${state.rounds} 轮：前进到第 ${x + 1} 列、第 ${y + 1} 行`, node, incoming);
+        if (l.craters.includes(`${x},${y}`)) { halt("crash", "坠入陨石坑"); break; }
+      } else if (node.block === "pulse") {
+        state.pulses++; push(`第 ${state.rounds} 轮：发送当前位置脉冲`, node, incoming);
+        if (!state.moves) { halt("badPulse", "位置脉冲发早了，请先前进"); break; }
+      } else if (node.block === "left" || node.block === "right") {
+        state.d = (state.d + (node.block === "left" ? 3 : 1)) % 4;
+        state.turns++; push(`第 ${state.rounds} 轮：${blocks[node.block]}，朝${names[state.d]}`, node, incoming);
+      } else if (node.block === "scan") {
+        const sample = l.samples?.findIndex(([x,y]) => x === state.x && y === state.y) ?? -1;
+        if (sample < 0) { halt("notSample", "基地不是待测样点"); break; }
+        state.scans++; state.scanResult = sample === 7;
+        if (!state.scanned.includes(sample)) state.scanned.push(sample);
+        push(`扫描 ${sample + 1} 号样点：${state.scanResult ? "发现水冰" : "无信号"}`, node, incoming);
+      } else if (node.block === "advance") {
+        const sample = l.samples?.findIndex(([x,y]) => x === state.x && y === state.y) ?? -1;
+        const next = l.samples?.[sample + 1];
+        if (!next) { halt("routeEnd", "已到路线终点"); break; }
+        const direction = dirs.findIndex(([dx,dy]) => dx === next[0] - state.x && dy === next[1] - state.y);
+        if (direction < 0) { halt("routeEnd", "已到路线终点"); break; }
+        if (direction !== state.d) { state.turns++; state.d = direction; }
+        state.x = next[0]; state.y = next[1]; state.moves++;
+        if (!state.visited.includes(`${state.x},${state.y}`)) state.visited.push(`${state.x},${state.y}`);
+        push(`沿路线到达 ${sample + 2} 号样点`, node, incoming);
+      }
+    } else { halt("broken", "这一步不是可执行的动作"); break; }
+    const choices = edges.filter(e => e.from === node!.id && !e.label);
+    if (choices.length !== 1) { halt("broken", "执行到这里没有唯一的下一条箭头"); break; }
+    incoming = choices[0];
+    if (!byId.has(incoming.to)) { halt("broken", "箭头没有接到图形上"); break; }
+    node = byId.get(incoming.to);
+  }
+  if (!stop) halt("endless", "超过运行上限，请检查箭头和停止条件");
+  const win = stop === "condition" && (
+    l.id === "l1" ? state.moves === 6 && state.pulses === 6 && plan.condition === "tower" :
+    l.id === "l2" ? state.x === 0 && state.y === 0 && state.moves === 5 && state.turns === 2 && plan.condition === "camp" :
+    l.id === "l4" ? state.visited.length === 8 && state.moves === 8 && state.turns === 4 && state.rounds === 4 :
+    state.scanResult === true && state.moves === 8 && state.scans >= 8
+  );
+  if (stop === "condition") reason = win ? `任务完成：${state.rounds} 轮，${state.moves} 格` : state.rounds === 0 ? "条件已经成立，原地停止（0 轮）" : "循环停止，但没有完成任务";
+  push(reason, node, incoming);
+  return { frames, win, reason, stop };
+}
 export function simulate(id: string, p: Plan): Simulation {
-  const l = levels.find((l) => l.id === id);
+  const l = getLevel(id);
   if (!l) throw new Error("未知关卡");
-  const graphMode = p.nodes !== undefined || p.edges !== undefined,
-    graph = graphMode
-      ? validateFlow(l, p)
-      : {
-          valid: true,
-          errors: [],
-          body: p.body,
-          steps: [] as FlowValidation["steps"],
-        },
+  if (p.nodes !== undefined || p.edges !== undefined) return simulateGraph(l, p);
+  const graph = { body: p.body, steps: [] as FlowValidation["steps"] },
     body = graph.body;
-  if (!graph.valid) throw new Error(graph.errors[0] || "巡视流程图还没有完成");
   if (
     !["pre", "post"].includes(p.timing) ||
     !l.conditions.includes(p.condition) ||
@@ -679,22 +788,14 @@ export function simulate(id: string, p: Plan): Simulation {
     throw new Error("无效的巡视方案");
   const s = initialFrame(l),
     frames: Frame[] = [];
-  const loopNode = p.nodes?.find((n) => n.role === "loop-condition"),
-    endNode = p.nodes?.find((n) => n.kind === "end");
-  let lastNodeId = p.nodes?.find((n) => n.kind === "start")?.id;
+  let lastNodeId: string | undefined;
   const push = (
     text: string,
     active: Frame["active"] = null,
     nodeId?: string,
     edgeId?: string,
   ) => {
-    const target =
-      nodeId ||
-      (active === "condition"
-        ? loopNode?.id
-        : typeof active === "number"
-          ? graph.steps[active]?.nodeId
-          : undefined);
+    const target = nodeId;
     s.text = text;
     s.active = active;
     s.nodeId = target;
@@ -900,7 +1001,7 @@ export function simulate(id: string, p: Plan): Simulation {
   const reason = win
     ? `任务完成：${s.rounds} 轮，${s.moves} 格${id === "l3" ? "，第 8 站发现水冰" : ""}`
     : reasons[stop];
-  push(reason, null, stop === "condition" ? endNode?.id : lastNodeId);
+  push(reason, null, lastNodeId);
   return { frames, win, reason, stop };
 }
 export const quizzes = [
@@ -979,6 +1080,7 @@ export function gradeQuiz(id: string, answers: number[]) {
 }
 export type Snapshot = {
   activity: string;
+  planRevision?: number;
   plan?: Plan;
   frame?: Frame;
   prediction?: string;
@@ -995,7 +1097,7 @@ export type Snapshot = {
   selfReview?: boolean[];
 };
 export const activityNames: Record<string, string> = Object.fromEntries([
-  ...levels.map((l) => [l.id, l.title]),
+  ...lessonCatalog.map((l) => [l.id, l.title]),
   ...quizzes.map((q) => [q.id, q.title]),
   ["challenge", "充电调试 · 选做"],
   ["review", "学习小结"],

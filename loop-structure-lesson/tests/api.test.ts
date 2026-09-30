@@ -153,10 +153,10 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
       edges: attempt.plan.edges!.filter((e) => e.kind !== "return"),
     },
   };
-  assert.equal(
-    (await req("/student/attempts", invalid, studentCookie)).status,
-    400,
-  );
+  assert.equal((await req("/student/attempts", invalid, studentCookie)).status, 200);
+  detail = await req("/teacher/participants/" + participant);
+  assert.equal(detail.data.attempts.at(-1).win, 0);
+  assert.match(detail.data.attempts.at(-1).reason, /没有唯一的下一条箭头/);
   assert.equal(
     (
       await req(
@@ -179,7 +179,7 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
         studentCookie,
       )
     ).status,
-    400,
+    200,
   );
   const answer = {
     id: randomUUID(),
@@ -237,12 +237,12 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
   history = await req(`/teacher/participants/${participant}/events`);
   assert.equal(history.data.events.length, 0);
   detail = await req("/teacher/participants/" + participant);
-  assert.equal(detail.data.attempts.length, 1);
+  assert.equal(detail.data.attempts.length, 3);
   assert.equal(detail.data.answers.length, 1);
   const criteria = { classroomId: room, replaysOnly: false },
     preview = await req("/teacher/cleanup/preview", criteria);
   assert.equal(preview.data.students, 2);
-  assert.equal(preview.data.attempts, 1);
+  assert.equal(preview.data.attempts, 3);
   assert.equal(
     (
       await req("/teacher/cleanup", {
@@ -280,6 +280,39 @@ test("教师认证、独立作答、幂等补传、权限边界和两级清理",
     (await req("/teacher/classrooms/" + room + "/summary")).data.length,
     0,
   );
+});
+
+test("教师可修正残图，旧离线事件不能覆盖修正，未预测也可记录尝试", async () => {
+  const created = await req("/teacher/classrooms", { classId: "demo-5", name: "修正流程课堂" });
+  const joined = await req("/student/join", {
+    classroomId: created.data.id,
+    studentIds: ["001"],
+  }, "");
+  const pid = joined.data.participant.id;
+  const broken = referencePlan("l1");
+  broken.edges = broken.edges!.filter((edge) => edge.kind !== "return");
+  const oldSnapshot = { activity: "l1", plan: broken, planRevision: 0 };
+  const event = (snapshot: any) => ({
+    id: randomUUID(), at: Date.now(), kind: "edit", label: "修改方案", snapshot,
+  });
+  assert.equal((await req("/student/events", { events: [event(oldSnapshot)] }, joined.cookie)).status, 200);
+  assert.equal((await req(`/teacher/participants/${pid}/plan`, { plan: referencePlan("l1") }, joined.cookie, "PATCH")).status, 401);
+  const correction = await req(`/teacher/participants/${pid}/plan`, { plan: referencePlan("l1") }, teacherCookie, "PATCH");
+  assert.equal(correction.status, 200);
+  assert.equal(correction.data.snapshot.planRevision, 1);
+  assert.equal(correction.data.snapshot.plan.edges.some((edge: any) => edge.kind === "return"), true);
+  await req("/student/events", { events: [event(oldSnapshot)] }, joined.cookie);
+  const studentState = (await req("/student/me", undefined, joined.cookie)).data;
+  assert.equal(studentState.participant.state.planRevision, 1);
+  assert.equal(studentState.drafts.l1.plan.edges.some((edge: any) => edge.kind === "return"), true);
+  const history = (await req(`/teacher/participants/${pid}/events`)).data.events;
+  assert.equal(history.length, 2);
+  assert.equal(history[1].label, "教师修正流程图");
+  const attempt = await req("/student/attempts", {
+    id: randomUUID(), level: "l1", plan: broken, prediction: "未预测", assisted: false,
+  }, joined.cookie);
+  assert.equal(attempt.status, 200);
+  assert.equal(attempt.data.win, false);
 });
 
 test("事件数量上限与到期清理保留近期成绩，删除过期小组", async () => {

@@ -1,13 +1,13 @@
 import {
   initialFrame,
   initialPlan,
-  levels,
+  getLevel,
   simulate,
   type Snapshot,
 } from "./engine";
 
 export function editableSnapshot(s: Snapshot): Snapshot {
-  const l = levels.find((l) => l.id === s.activity);
+  const l = getLevel(s.activity);
   if (l && s.plan?.nodes === undefined)
     return {
       ...s,
@@ -23,7 +23,7 @@ export function editableSnapshot(s: Snapshot): Snapshot {
 export function compactSnapshot(s: Snapshot): Snapshot {
   const out: Snapshot = { activity: s.activity };
   const keys: (keyof Snapshot)[] = s.activity.startsWith("l")
-    ? ["plan", "prediction", "explanation", "result", "hint", "operator"]
+    ? ["plan", "planRevision", "prediction", "explanation", "result", "hint", "operator"]
     : s.activity.startsWith("q")
       ? ["answers", "note", "selectedStudent", "operator"]
       : s.activity === "challenge"
@@ -34,7 +34,7 @@ export function compactSnapshot(s: Snapshot): Snapshot {
 }
 export function restoreSnapshot(s: Snapshot): Snapshot {
   if (s.frame || !s.plan) return s;
-  const l = levels.find((l) => l.id === s.activity);
+  const l = getLevel(s.activity);
   if (!l) return s;
   let frame = initialFrame(l);
   if (s.result) {

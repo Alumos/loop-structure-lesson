@@ -19,7 +19,6 @@ import { z } from "zod";
 import { createRoster, type Roster } from "./roster.js";
 import {
   simulate,
-  validateFlow,
   gradeQuiz,
   levels,
   type Snapshot,
@@ -44,6 +43,9 @@ db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=O
  CREATE INDEX IF NOT EXISTS participants_classroom ON participants(classroom_id);
  CREATE INDEX IF NOT EXISTS attempts_participant ON attempts(participant_id,at);
 `);
+if (!(db.prepare("PRAGMA table_info(participants)").all() as {name:string}[]).some(column => column.name === "plan_revision"))
+  db.exec("ALTER TABLE participants ADD COLUMN plan_revision INTEGER NOT NULL DEFAULT 0");
+db.exec("UPDATE classrooms SET settings=json_set(settings,'$.openLevel','all') WHERE json_extract(settings,'$.openLevel')='l3'");
 const stmt = (sql: string) => db.prepare(sql);
 const parse = (v: any, fallback: any = null) => (v ? JSON.parse(v) : fallback);
 const uid = () => randomBytes(16).toString("hex");
@@ -422,6 +424,7 @@ const snapshotSchema = z.object({
     "review",
   ]),
   plan: planSchema.optional(),
+  planRevision: z.number().int().min(0).optional(),
   frame: frameSchema.optional(),
   prediction: z.string().max(150).optional(),
   explanation: z.string().max(1000).optional(),
@@ -474,6 +477,7 @@ app.post("/api/student/live", ...student, writable, (req, res) => {
     .object({ snapshot: snapshotSchema, label: z.string().max(200) })
     .parse(req.body);
   const p = res.locals.participant;
+  if ((b.snapshot.planRevision || 0) < p.plan_revision) return res.json({ ok: true });
   broadcast("state", {
     id: p.id,
     classroomId: p.classroom_id,
@@ -506,6 +510,7 @@ app.post("/api/student/events", ...student, writable, (req, res) => {
       )
         continue;
       const snapshot = compactSnapshot(e.snapshot);
+      if ((snapshot.planRevision || 0) < p.plan_revision) continue;
       const previous = parse(
         (
           stmt(
@@ -580,12 +585,8 @@ app.post("/api/student/attempts", ...student, writable, (req, res) => {
     return res.status(403).json({ error: "教师尚未开放此关卡" });
   const level = levels.find((l) => l.id === b.level);
   if (!level) return res.status(400).json({ error: "未知关卡" });
-  const check = validateFlow(level, b.plan);
-  if (!check.valid)
-    return res
-      .status(400)
-      .json({ error: check.errors[0], issues: check.issues });
-  b.plan.body = check.body;
+  if (!b.plan.nodes || !b.plan.edges)
+    return res.status(400).json({ error: "请从画布中的流程图开始运行" });
   const result = simulate(b.level, b.plan);
   stmt("INSERT OR IGNORE INTO attempts VALUES(?,?,?,?,?,?,?,?,?)").run(
     b.id,
@@ -675,7 +676,7 @@ app.patch("/api/teacher/classrooms/:id", teacher, (req, res) => {
         .object({
           quizOpen: z.boolean(),
           answersOpen: z.boolean(),
-          openLevel: z.enum(["all", "l1", "l2", "l3", "l4"]),
+          openLevel: z.enum(["all", "l1", "l2", "l4"]),
         })
         .optional(),
     })
@@ -734,6 +735,31 @@ app.get("/api/teacher/participants/:id", teacher, (req, res) => {
       .map((v: any) => ({ ...v, answers: parse(v.answers) })),
     reviews: stmt("SELECT * FROM reviews WHERE participant_id=?").all(p.id),
   });
+});
+app.patch("/api/teacher/participants/:id/plan", teacher, (req, res) => {
+  const p = participant(req.params.id as string);
+  if (!p) return res.status(404).json({ error: "学生记录不存在或已清理" });
+  const room = classroom(p.classroom_id);
+  if (!room?.active) return res.status(409).json({ error: "课堂已经结束" });
+  if (!p.state || !levels.some(level => level.id === p.state.activity))
+    return res.status(409).json({ error: "学生当前不在巡视任务中" });
+  const { plan } = z.object({ plan: planSchema }).parse(req.body);
+  const revision = p.plan_revision + 1, now = Date.now();
+  const snapshot = compactSnapshot({ ...p.state, plan, planRevision: revision, running: false, result: undefined });
+  db.exec("BEGIN");
+  try {
+    stmt("UPDATE participants SET state=?,plan_revision=?,last_seen=? WHERE id=?").run(JSON.stringify(snapshot), revision, now, p.id);
+    stmt("INSERT OR REPLACE INTO drafts VALUES(?,?,?)").run(p.id, snapshot.activity, JSON.stringify(snapshot));
+    stmt("INSERT INTO events(event_id,participant_id,at,client_at,kind,label,snapshot) VALUES(?,?,?,?,?,?,?)")
+      .run(uid(), p.id, now, now, "edit", "教师修正流程图", JSON.stringify(snapshot));
+    db.exec("COMMIT");
+  } catch (error) { db.exec("ROLLBACK"); throw error; }
+  const restored = restoreSnapshot(snapshot);
+  broadcast("state", { id:p.id, classroomId:p.classroom_id, state:restored, last_seen:now, label:"教师修正流程图" });
+  for (const [ws, session] of sockets)
+    if (session.role === "student" && session.entity === p.id && ws.readyState === WebSocket.OPEN)
+      ws.send(JSON.stringify({ type:"teacher-plan", data:{ id:p.id, snapshot:restored } }));
+  res.json({ snapshot: restored });
 });
 app.post("/api/teacher/participants/:id/ack-help", teacher, (req, res) => {
   stmt("UPDATE participants SET needs_help=0 WHERE id=?").run(

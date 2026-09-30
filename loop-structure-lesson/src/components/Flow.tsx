@@ -206,7 +206,7 @@ export function Flow({
     gestureRef = useRef<Gesture | null>(null);
   const marker = useId().replace(/:/g, ""),
     validation = useMemo(() => validateFlow(level, plan), [level, plan]);
-  const scale = Math.min(1, viewportWidth / 900) * zoom;
+  const scale = Math.min(1, Math.max(0.65, viewportWidth / 900)) * zoom;
   const legacy = positionsFor(nodes, plan.timing, 900);
   const storedPositions = legacy.positions.map((p) => ({
     ...p,
@@ -447,7 +447,8 @@ export function Flow({
       if (
         g.type === "palette" &&
         moved &&
-        hit?.closest(".flow-builder-canvas") === canvas.current
+        e.clientX >= rect.left && e.clientX <= rect.right &&
+        e.clientY >= rect.top && e.clientY <= rect.bottom
       )
         addNode(g.paletteId, point);
       if (g.type === "move" && moved) {
@@ -1016,12 +1017,12 @@ export function Flow({
         {validation.valid ? (
           <>
             <Link2 size={15} />
-            流程图完整，可以开始模拟。
+              流程图完整，可以开始模拟。
           </>
         ) : (
           <>
             <X size={15} />
-            <span>{validation.errors[0]}</span>
+                <span>{validation.errors[0]}。可以运行看看会停在哪里。</span>
           </>
         )}
       </div>

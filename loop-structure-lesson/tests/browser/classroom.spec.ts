@@ -21,8 +21,8 @@ async function addNode(page: Page, label: string) {
     .locator(".flow-node-palette")
     .getByRole("button", { name: label, exact: true });
   const count = await page.locator("[data-node]").count();
-  const x = label === "左转 90°" || label === "结束" ? 700 : 340;
-  const y = label === "左转 90°" ? 460 : 90 + count * 130;
+  const x = label === "左转 90°" || label === "右转 90°" || label === "结束" || count > 5 ? 700 : 340;
+  const y = label.includes("转 90°") ? 460 : label === "结束" ? 90 : 90 + Math.min(count, 3) * 130;
   await page
     .locator(".flow-builder")
     .evaluate((e) => e.scrollIntoView({ block: "start" }));
@@ -193,12 +193,8 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(student.locator(".flow-validation")).toContainText(
     "还不能重复执行",
   );
-  await expect(
-    student.getByRole("button", { name: "开始模拟", exact: true }),
-  ).toBeDisabled();
-  await linkNode(student, "pulse-1", "回到判断 →", "condition-tower");
-  await expect(student.locator(".flow-validation")).toContainText("流程图完整");
-  await capture(student, "artifacts/student-exercise.png");
+  await student.getByRole("button", { name: "开始模拟", exact: true }).click();
+  await expect(student.locator(".run-status")).toContainText("没有唯一的下一条箭头", { timeout: 25000 });
   await expect(
     page.getByRole("row").filter({ hasText: "演示学生甲 / 演示学生乙" }),
   ).toBeVisible();
@@ -209,6 +205,16 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(
     page.getByRole("heading", { name: "演示学生甲 / 演示学生乙" }),
   ).toBeVisible();
+  await page.getByRole("button", { name: "显示标准答案" }).click();
+  await expect(page.locator(".teacher-flow-tools [data-edge-kind='return']")).toHaveCount(1);
+  await expect(student.locator("[data-edge-kind='return']")).toHaveCount(0);
+  await page.getByRole("button", { name: "收起标准答案" }).click();
+  await page.getByRole("button", { name: "修正流程图" }).click();
+  await linkNode(page, "pulse-1", "回到判断 →", "condition-tower");
+  await expect(student.locator("[data-edge-kind='return']")).toHaveCount(1);
+  await page.getByRole("button", { name: "完成修正" }).click();
+  await expect(student.locator(".flow-validation")).toContainText("流程图完整");
+  await capture(student, "artifacts/student-exercise.png");
   await expect(page.locator(".monitor-frame [data-block-index]")).toHaveCount(
     2,
   );
@@ -358,7 +364,7 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
   await expect(page.getByRole("button", { name: /^上移|^下移/ })).toHaveCount(
     0,
   );
-  await expect(page.getByText("本关统一使用：先判断，再执行")).toBeVisible();
+  await expect(page.getByText("本关统一使用：先判断，再执行")).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "先执行，再判断", exact: true }),
   ).toHaveCount(0);
@@ -372,7 +378,7 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
   await expect(page.locator(".flow-validation")).not.toContainText(
     "流程图完整",
   );
-  await page.getByRole("button", { name: /04 绕坑一圈/ }).click();
+  await page.getByRole("button", { name: /03 绕坑一圈/ }).click();
   await expect(page.locator("[data-node]")).toHaveCount(0);
   await buildL4(page);
   await page.getByRole("button", { name: "0 轮", exact: true }).click();
@@ -396,7 +402,7 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
   ).toBe(true);
 });
 
-test("第三关手工连接和拖线，先判断缺少数据，先执行第八样点停止", async ({
+test("第三关空图可运行，补齐流程后比较判断位置", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -405,68 +411,33 @@ test("第三关手工连接和拖线，先判断缺少数据，先执行第八�
     data: { username: "Alumos", password: "browser-test-password" },
   });
   const created = await page.request.post("/api/teacher/classrooms", {
-    data: { classId: "demo-5", name: "水冰时机对照课堂" },
+    data: { classId: "demo-5", name: "绕坑时机对照课堂" },
   });
   const room = await created.json();
   await page.request.post("/api/student/join", {
     data: { classroomId: room.id, studentIds: ["001"] },
   });
   await page.goto("/");
-  await page.getByRole("button", { name: /03 寻找水冰/ }).click();
+  await page.getByRole("button", { name: /03 绕坑一圈/ }).click();
   await expect(page.locator("[data-node]")).toHaveCount(0);
-  await expect(
-    page
-      .locator(".flow-node-palette")
-      .getByRole("button", { name: "前进 1 格" }),
-  ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "没有数据，无法判断", exact: true })
-    .click();
-  for (const label of [
-    "开始",
-    "本轮扫描到水冰？",
-    "到下一样点",
-    "扫描当前样点",
-    "结束",
-  ])
-    await addNode(page, label);
-  await page
-    .getByRole("button", { name: "先执行，再判断", exact: true })
-    .click();
-  await expect(page.locator("[data-edge]")).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "先判断，再执行", exact: true })
-    .click();
-  await linkNode(page, "start", "下一步 →", "condition-ice");
-  await expect(page.locator("[data-edge]")).toHaveCount(1);
-  await linkNode(page, "condition-ice", "是 →", "end");
-  await linkNode(page, "condition-ice", "否 →", "advance-1");
-  await linkNode(page, "advance-1", "下一步 →", "scan-1");
-  await linkNode(page, "scan-1", "回到判断 →", "advance-1");
-  await expect(page.locator(".flow-validation")).toContainText("不能回到动作");
-  await expect(
-    page.getByRole("button", { name: "开始模拟", exact: true }),
-  ).toBeDisabled();
-  await linkNode(page, "scan-1", "回到判断 →", "condition-ice");
-  await expect(page.locator(".flow-validation")).toContainText("流程图完整");
-  await capture(page, "artifacts/flowchart-scan-pre.png");
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
-  await expect(page.locator(".run-status")).toContainText(
-    "尚无扫描数据，无法判断",
-  );
+  await expect(page.locator(".run-status")).toContainText("没有“开始”节点");
+  await page.getByRole("button", { name: "复位" }).click();
+  await buildL4(page);
+  await capture(page, "artifacts/flowchart-loop-pre.png");
+  await page.getByRole("button", { name: "开始模拟", exact: true }).click();
+  await expect(page.locator(".run-status")).toContainText("原地停止（0 轮）");
   await page
     .getByRole("button", { name: "先执行，再判断", exact: true })
     .click();
   await expect(page.locator('[data-edge-kind="return"]')).toHaveCount(1);
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
-  await expect(page.locator('[data-node="advance-1"].executing')).toBeVisible();
+  await expect(page.locator('[data-node="fwd-1"].executing')).toBeVisible();
   await expect(page.locator(".run-status")).toContainText(
-    "任务完成：8 轮，8 格",
+    "任务完成：4 轮，8 格",
     { timeout: 20000 },
   );
-  await expect(page.locator(".comparison")).toContainText("尚无扫描数据");
-  await expect(page.locator(".comparison")).toContainText("第 3 列、第 2 行");
-  await capture(page, "artifacts/flowchart-scan-post.png");
+  await capture(page, "artifacts/flowchart-loop-post.png");
   expect(errors).toEqual([]);
 });
 

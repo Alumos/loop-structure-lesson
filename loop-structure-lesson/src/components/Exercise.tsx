@@ -19,6 +19,7 @@ import { Textarea } from "./ui/input";
 import {
   conditions,
   levels,
+  getLevel,
   quizzes,
   initialFrame,
   initialPlan,
@@ -26,7 +27,6 @@ import {
   referencePlan,
   retimeFlow,
   simulate,
-  validateFlow,
   type Snapshot,
   type Plan,
   type Level,
@@ -148,7 +148,7 @@ export function Exercise({
   attempts?: any[];
 }) {
   s = restoreSnapshot(s);
-  const l = levels.find((l) => l.id === s.activity);
+  const l = getLevel(s.activity);
   if (!l) return null;
   const plan =
       s.plan && s.plan.nodes !== undefined
@@ -157,7 +157,6 @@ export function Exercise({
           ? planFromBody(l.id, s.plan)
           : initialPlan(l.id),
     frame = s.frame || initialFrame(l);
-  const flowValidation = validateFlow(l, plan);
   const edit = (p: Plan) => {
     onChange(
       { plan: p, frame: initialFrame(l), running: false, result: undefined },
@@ -169,7 +168,7 @@ export function Exercise({
     <div className="exercise">
       <div className="mission-heading">
         <div>
-          <div className="eyebrow">任务 {l.id.slice(1)} / 04</div>
+          <div className="eyebrow">任务 {levels.findIndex(v => v.id === l.id) + 1} / 03</div>
           <h2>{l.title}</h2>
           <p>{l.task}</p>
         </div>
@@ -206,7 +205,7 @@ export function Exercise({
           <Card className="p-4">
             <div className="section-label">
               <Radio size={15} />
-              先预测，再运行
+              运行前想一想
             </div>
             <p className="my-3 text-sm">{l.prediction}</p>
             <div className="flex flex-wrap gap-2">
@@ -229,7 +228,7 @@ export function Exercise({
           <div className="flex flex-wrap gap-2">
             <Button
               className="flex-1"
-              disabled={readonly || !s.prediction || !flowValidation.valid}
+              disabled={readonly}
               onClick={s.running ? onStop : onRun}
             >
               {s.running ? <Square /> : <Play />}
@@ -264,11 +263,6 @@ export function Exercise({
               提示
             </Button>
           </div>
-          {!s.prediction && (
-            <p className="text-xs text-muted-foreground">
-              先留下预测，再完成流程图。
-            </p>
-          )}
           {s.hint && <div className="hint-panel">{l.hint}</div>}
           <div className={cn("run-status", s.result && "has-result")}>
             <span className="live-dot" />
@@ -371,9 +365,7 @@ export function Exercise({
                   </button>
                 ))}
               </div>
-            ) : (
-              <div className="fixed-timing">本关统一使用：先判断，再执行</div>
-            )}
+            ) : null}
             {l.timingMode === "compare" && (
               <p className="text-xs text-muted-foreground">
                 循环体保持不变，只比较判断位置。
@@ -640,7 +632,7 @@ export function Review({
   readonly?: boolean;
 }) {
   const labels = [
-    "我先预测，再运行",
+    "我尝试运行并观察停在哪里",
     "我能补齐流程图，说明返回箭头回到哪里",
     "我能根据结果修正方案，参与合作说明",
     "我如实记录失败与未知",
