@@ -1,4 +1,39 @@
-import type { FlowNode, Plan } from "../../shared/engine";
+import type { FlowEdge, FlowNode, Plan } from "../../shared/engine";
+
+export function classifyFlowEdges(
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+): FlowEdge[] {
+  const known = new Set(nodes.map((node) => node.id));
+  const outgoing = new Map<string, FlowEdge[]>();
+  for (const edge of edges) {
+    const list = outgoing.get(edge.from) || [];
+    list.push(edge);
+    outgoing.set(edge.from, list);
+  }
+  const active = new Set<string>();
+  const visited = new Set<string>();
+  const returns = new Set<string>();
+  const walk = (id: string) => {
+    if (!known.has(id) || visited.has(id)) return;
+    active.add(id);
+    for (const edge of [...(outgoing.get(id) || [])].sort(
+      (a, b) => Number(a.label === "yes") - Number(b.label === "yes"),
+    )) {
+      if (active.has(edge.to)) returns.add(edge.id);
+      else walk(edge.to);
+    }
+    active.delete(id);
+    visited.add(id);
+  };
+  nodes
+    .filter((node) => node.kind === "start")
+    .forEach((node) => walk(node.id));
+  return edges.map((edge) => ({
+    ...edge,
+    kind: returns.has(edge.id) ? "return" : "normal",
+  }));
+}
 
 export function snapPoint(
   point: { x: number; y: number },

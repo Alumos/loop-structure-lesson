@@ -29,7 +29,7 @@ import {
   type Plan,
 } from "../../shared/engine";
 import { cn } from "../lib/utils";
-import { snapPoint, arrangeFlow } from "../lib/flow-layout";
+import { snapPoint, arrangeFlow, classifyFlowEdges } from "../lib/flow-layout";
 
 type Point = { x: number; y: number };
 type Position = Point & { node: FlowNode; width: number; height: number };
@@ -105,48 +105,51 @@ function anchorPoint(p: Position, anchor: FlowAnchor): Point {
   const v = vectors[anchor];
   return { x: p.x + (v.x * p.width) / 2, y: p.y + (v.y * p.height) / 2 };
 }
-function edgeRoute(e: FlowEdge, positions: Position[]) {
+export function edgeRoute(e: FlowEdge, positions: Position[]) {
   const a = positions.find((p) => p.node.id === e.from),
     b = positions.find((p) => p.node.id === e.to);
   if (!a || !b) return null;
   const from =
-    e.fromAnchor ||
-    (e.kind === "return" ? "left" : e.label === "yes" ? "right" : "bottom");
-  const to = e.toAnchor || (e.kind === "return" ? "left" : "top");
+    e.kind === "return"
+      ? "left"
+      : e.fromAnchor || (e.label === "yes" ? "right" : "bottom");
+  const to = e.kind === "return" ? "left" : e.toAnchor || "top";
   const s = anchorPoint(a, from),
     t = anchorPoint(b, to),
     v = vectors[from],
     w = vectors[to];
   const u = { x: s.x + v.x * 28, y: s.y + v.y * 28 },
     z = { x: t.x + w.x * 28, y: t.y + w.y * 28 };
-  if (
-    e.kind !== "return" &&
-    from === "bottom" &&
-    to === "top" &&
-    Math.abs(s.x - t.x) < 1 &&
-    t.y > s.y
-  ) {
+  if (e.kind !== "return" && from === "bottom" && to === "top" && t.y > s.y) {
+    const mid = (s.y + t.y) / 2;
     return {
-      d: `M ${s.x} ${s.y} L ${t.x} ${t.y}`,
+      d:
+        s.x === t.x
+          ? `M ${s.x} ${s.y} L ${t.x} ${t.y}`
+          : `M ${s.x} ${s.y} L ${s.x} ${mid} L ${t.x} ${mid} L ${t.x} ${t.y}`,
       x: s.x + 10,
-      y: (s.y + t.y) / 2,
+      y: mid,
       text: e.label === "yes" ? "是" : e.label === "no" ? "否" : "",
     };
   }
-  let middle: string;
-  const returnLane = Math.max(
-    12,
-    Math.min(...positions.map((p) => p.x - p.width / 2)) - 38,
-  );
-  if (e.kind !== "return" && b.node.kind === "end" && e.label === "yes") {
-    // Keep the stop branch outside the body so it cannot look like it enters an action.
-    const lane = Math.max(...positions.map((p) => p.x + p.width / 2)) + 38;
-    middle = `L ${lane} ${u.y} L ${lane} ${z.y}`;
-  } else if (e.kind === "return") {
+  if (e.kind === "return") {
     const lane = Math.max(
       12,
       Math.min(...positions.map((p) => p.x - p.width / 2)) - 38,
     );
+    return {
+      d: `M ${s.x} ${s.y} L ${lane} ${s.y} L ${lane} ${t.y} L ${t.x} ${t.y}`,
+      x: lane + 8,
+      y: (s.y + t.y) / 2,
+      text: [e.label === "yes" ? "是" : e.label === "no" ? "否" : "", "返回"]
+        .filter(Boolean)
+        .join(" · "),
+    };
+  }
+  let middle: string;
+  if (b.node.kind === "end" && e.label === "yes") {
+    // Keep the stop branch outside the body so it cannot look like it enters an action.
+    const lane = Math.max(...positions.map((p) => p.x + p.width / 2)) + 38;
     middle = `L ${lane} ${u.y} L ${lane} ${z.y}`;
   } else if (v.x && w.x) {
     const x = (u.x + z.x) / 2;
@@ -163,12 +166,9 @@ function edgeRoute(e: FlowEdge, positions: Position[]) {
   } else middle = v.x ? `L ${z.x} ${u.y}` : `L ${u.x} ${z.y}`;
   return {
     d: `M ${s.x} ${s.y} L ${u.x} ${u.y} ${middle} L ${z.x} ${z.y} L ${t.x} ${t.y}`,
-    x: e.kind === "return" ? returnLane + 8 : u.x + 7,
-    y: e.kind === "return" ? (u.y + z.y) / 2 : u.y - 7,
-    text: [
-      e.label === "yes" ? "是" : e.label === "no" ? "否" : "",
-      e.kind === "return" ? "返回" : "",
-    ]
+    x: u.x + 7,
+    y: u.y - 7,
+    text: [e.label === "yes" ? "是" : e.label === "no" ? "否" : ""]
       .filter(Boolean)
       .join(" · "),
   };
@@ -190,7 +190,10 @@ export function Flow({
   disabled?: boolean;
 }) {
   const nodes = plan.nodes || [],
-    edges = plan.edges || [],
+    edges = useMemo(
+      () => classifyFlowEdges(nodes, plan.edges || []),
+      [plan.nodes, plan.edges],
+    ),
     locked = readonly || disabled;
   const [history, setHistory] = useState<Plan[]>([]),
     [gesture, setGesture] = useState<Gesture | null>(null),
@@ -205,7 +208,10 @@ export function Flow({
     canvas = useRef<HTMLDivElement>(null),
     gestureRef = useRef<Gesture | null>(null);
   const marker = useId().replace(/:/g, ""),
-    validation = useMemo(() => validateFlow(level, plan), [level, plan]);
+    validation = useMemo(
+      () => validateFlow(level, { ...plan, edges }),
+      [level, plan, edges],
+    );
   const scale = Math.min(1, Math.max(0.65, viewportWidth / 900)) * zoom;
   const legacy = positionsFor(nodes, plan.timing, 900);
   const storedPositions = legacy.positions.map((p) => ({
@@ -288,12 +294,15 @@ export function Flow({
   const apply = (next: Plan) => {
     if (locked) return;
     setHistory((v) => [...v.slice(-29), plan]);
-    const check = validateFlow(level, next);
-    onPlan({
+    const normalized = {
       ...next,
+      edges: classifyFlowEdges(next.nodes || [], next.edges || []),
+    };
+    const check = validateFlow(level, normalized);
+    onPlan({
+      ...normalized,
       body: check.valid ? check.body : [],
-      nodes: next.nodes || [],
-      edges: next.edges || [],
+      nodes: normalized.nodes || [],
     });
     cancel();
   };
@@ -352,24 +361,6 @@ export function Flow({
           ? "yes"
           : "no"
         : undefined;
-    // The student draws the cycle; classify its closing arrow for execution evidence.
-    const seen = new Set<string>();
-    const reaches = (id: string): boolean => {
-      if (id === source.id) return true;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return edges
-        .filter(
-          (e) => e.from === id && e.from !== source.id && e.kind !== "return",
-        )
-        .some((e) => reaches(e.to));
-    };
-    const isReturn =
-      plan.timing === "post"
-        ? source.role === "loop-condition" && label === "no"
-        : source.kind === "action" &&
-          (nodes.find((n) => n.id === target)?.role === "loop-condition" ||
-            reaches(target));
     const edge: FlowEdge = {
       id: `edge-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       from: source.id,
@@ -377,7 +368,7 @@ export function Flow({
       fromAnchor: g.anchor,
       toAnchor,
       label,
-      kind: isReturn ? "return" : "normal",
+      kind: "normal",
     };
     apply({
       ...plan,
@@ -447,8 +438,10 @@ export function Flow({
       if (
         g.type === "palette" &&
         moved &&
-        e.clientX >= rect.left && e.clientX <= rect.right &&
-        e.clientY >= rect.top && e.clientY <= rect.bottom
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom
       )
         addNode(g.paletteId, point);
       if (g.type === "move" && moved) {
@@ -563,7 +556,7 @@ export function Flow({
                 title="一键整理：对齐节点和箭头，保留连接关系"
                 disabled={locked || nodes.length < 2}
                 onClick={() => {
-                  apply(arrangeFlow(plan));
+                  apply(arrangeFlow({ ...plan, edges }));
                   setSelectedEdge(null);
                 }}
               >
@@ -579,7 +572,13 @@ export function Flow({
                   const previous = history[history.length - 1];
                   if (previous) {
                     setHistory((v) => v.slice(0, -1));
-                    onPlan(previous);
+                    onPlan({
+                      ...previous,
+                      edges: classifyFlowEdges(
+                        previous.nodes || [],
+                        previous.edges || [],
+                      ),
+                    });
                     setSelectedEdge(null);
                   }
                 }}
@@ -962,20 +961,6 @@ export function Flow({
                     </select>
                   </label>
                 )}
-                <label>
-                  <input
-                    type="checkbox"
-                    aria-label="作为返回箭头"
-                    disabled={locked}
-                    checked={editEdge.kind === "return"}
-                    onChange={(e) =>
-                      patchEdge({
-                        kind: e.target.checked ? "return" : "normal",
-                      })
-                    }
-                  />{" "}
-                  返回箭头
-                </label>
                 <button
                   type="button"
                   disabled={locked}
@@ -1017,12 +1002,12 @@ export function Flow({
         {validation.valid ? (
           <>
             <Link2 size={15} />
-              流程图完整，可以开始模拟。
+            流程图完整，可以开始模拟。
           </>
         ) : (
           <>
             <X size={15} />
-                <span>{validation.errors[0]}。可以运行看看会停在哪里。</span>
+            <span>{validation.errors[0]}。可以运行看看会停在哪里。</span>
           </>
         )}
       </div>

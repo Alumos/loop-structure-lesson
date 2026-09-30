@@ -21,8 +21,18 @@ async function addNode(page: Page, label: string) {
     .locator(".flow-node-palette")
     .getByRole("button", { name: label, exact: true });
   const count = await page.locator("[data-node]").count();
-  const x = label === "左转 90°" || label === "右转 90°" || label === "结束" || count > 5 ? 700 : 340;
-  const y = label.includes("转 90°") ? 460 : label === "结束" ? 90 : 90 + Math.min(count, 3) * 130;
+  const x =
+    label === "左转 90°" ||
+    label === "右转 90°" ||
+    label === "结束" ||
+    count > 5
+      ? 700
+      : 340;
+  const y = label.includes("转 90°")
+    ? 460
+    : label === "结束"
+      ? 90
+      : 90 + Math.min(count, 3) * 130;
   await page
     .locator(".flow-builder")
     .evaluate((e) => e.scrollIntoView({ block: "start" }));
@@ -194,7 +204,10 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
     "还不能重复执行",
   );
   await student.getByRole("button", { name: "开始模拟", exact: true }).click();
-  await expect(student.locator(".run-status")).toContainText("没有唯一的下一条箭头", { timeout: 25000 });
+  await expect(student.locator(".run-status")).toContainText(
+    "没有唯一的下一条箭头",
+    { timeout: 25000 },
+  );
   await expect(
     page.getByRole("row").filter({ hasText: "演示学生甲 / 演示学生乙" }),
   ).toBeVisible();
@@ -206,7 +219,9 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
     page.getByRole("heading", { name: "演示学生甲 / 演示学生乙" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "显示标准答案" }).click();
-  await expect(page.locator(".teacher-flow-tools [data-edge-kind='return']")).toHaveCount(1);
+  await expect(
+    page.locator(".teacher-flow-tools [data-edge-kind='return']"),
+  ).toHaveCount(1);
   await expect(student.locator("[data-edge-kind='return']")).toHaveCount(0);
   await page.getByRole("button", { name: "收起标准答案" }).click();
   await page.getByRole("button", { name: "修正流程图" }).click();
@@ -402,9 +417,7 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
   ).toBe(true);
 });
 
-test("第三关空图可运行，补齐流程后比较判断位置", async ({
-  page,
-}) => {
+test("第三关空图可运行，补齐流程后比较判断位置", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.request.post("/api/teacher/login", {
@@ -439,6 +452,44 @@ test("第三关空图可运行，补齐流程后比较判断位置", async ({
   );
   await capture(page, "artifacts/flowchart-loop-post.png");
   expect(errors).toEqual([]);
+});
+
+test("向下连接附近的结束节点时不误判返回，也不绕线", async ({ page }) => {
+  await page.request.post("/api/teacher/login", {
+    data: { username: "Alumos", password: "browser-test-password" },
+  });
+  const room = await (
+    await page.request.post("/api/teacher/classrooms", {
+      data: { classId: "demo-5", name: "近距离连线课堂" },
+    })
+  ).json();
+  await page.request.post("/api/student/join", {
+    data: { classroomId: room.id, studentIds: ["003"] },
+  });
+  await page.goto("/");
+  await addNode(page, "开始");
+  await addNode(page, "到达中继塔？");
+  await addNode(page, "结束");
+  const end = page.locator('[data-node="end"] .flow-node-content');
+  const endBox = (await end.boundingBox())!;
+  const decision = page.locator('[data-node="condition-tower"]');
+  const decisionBox = (await decision.boundingBox())!;
+  await dragBetween(
+    page,
+    { x: endBox.x + endBox.width / 2, y: endBox.y + endBox.height / 2 },
+    {
+      x: decisionBox.x + decisionBox.width / 2,
+      y: decisionBox.y + decisionBox.height + 68,
+    },
+  );
+  await linkNode(page, "start", "下一步 →", "condition-tower");
+  await linkNode(page, "condition-tower", "否 →", "end");
+  const edge = page.locator('[data-edge-kind="normal"]').last();
+  const path = await edge.locator("path:first-child").getAttribute("d");
+  expect(path?.split(" L ")).toHaveLength(2);
+  await expect(edge).toContainText("否");
+  await expect(page.locator('[data-edge-kind="return"]')).toHaveCount(0);
+  await capture(page, "artifacts/flowchart-short-link.png");
 });
 
 test("缺少新浏览器 API 时仍可加载名单、登录、运行和保存记录", async ({
@@ -580,6 +631,19 @@ test("触摸拖入、自由移动、边缘连线、展开缩放和取消拖动",
   );
   await expect(start).toHaveAttribute("data-x", "430");
   await expect(start).toHaveAttribute("data-y", "160");
+  const nearVertex = (await start.boundingBox())!;
+  await dragBetween(
+    page,
+    {
+      x: nearVertex.x + nearVertex.width / 2,
+      y: nearVertex.y + nearVertex.height / 2 - 8,
+    },
+    {
+      x: nearVertex.x + nearVertex.width / 2 + 60,
+      y: nearVertex.y + nearVertex.height / 2 + 32,
+    },
+  );
+  await expect(start).toHaveAttribute("data-x", "490");
   await addNode(page, "结束");
   await page.getByRole("button", { name: "放大画布" }).click();
   await linkNode(page, "start", "下一步 →", "end");
