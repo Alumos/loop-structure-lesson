@@ -13,16 +13,13 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: loop-structure-lesson
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: loop-structure-lesson/package-lock.json
+          cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -32,7 +29,7 @@ jobs:
         if: failure()
         with:
           name: playwright-results
-          path: loop-structure-lesson/test-results/
+          path: test-results/
   image:
     needs: verify
     runs-on: ubuntu-latest
@@ -49,7 +46,7 @@ jobs:
       - name: Build test image
         uses: docker/build-push-action@v6
         with:
-          context: ./loop-structure-lesson
+          context: .
           platforms: linux/amd64
           load: true
           tags: moon-classroom:smoke
@@ -97,7 +94,7 @@ jobs:
             type=sha
       - uses: docker/build-push-action@v6
         with:
-          context: ./loop-structure-lesson
+          context: .
           platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

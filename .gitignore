@@ -9,3 +9,5 @@ test-results/
 *.sqlite*
 .DS_Store
 compose.ready.yaml
+__pycache__/
+*.py[cod]
