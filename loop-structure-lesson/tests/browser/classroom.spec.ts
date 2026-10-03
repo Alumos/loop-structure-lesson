@@ -157,6 +157,11 @@ async function buildL4(page: Page) {
   await linkNode(page, "fwd-2", "下一步 →", "right-1");
   await linkNode(page, "right-1", "回到判断 →", "condition-home");
 }
+async function connectPostL4(page: Page) {
+  await linkNode(page, "start", "下一步 →", "fwd-1");
+  await linkNode(page, "right-1", "下一步 →", "condition-home");
+  await linkNode(page, "condition-home", "否 →", "fwd-1");
+}
 test("教师开课、学生闯关、实时画面、独立验收、回放和清理", async ({
   browser,
   page,
@@ -192,7 +197,13 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await expect(
     student.getByRole("heading", { name: "建立中继通信" }),
   ).toBeVisible();
-  await student.getByRole("button", { name: "6 轮", exact: true }).click();
+  await expect(student.getByText("运行前想一想")).toHaveCount(0);
+  await expect(student.getByText("反复做什么，依据什么停止？")).toHaveCount(0);
+  await expect(student.getByLabel("停止条件", { exact: true })).toHaveCount(0);
+  await expect(student.locator(".mission-goal")).toContainText("到达中继塔");
+  await expect(
+    student.locator('[data-palette-id="condition-battery"]'),
+  ).toBeVisible();
   await buildL1(student);
   await expect(student.locator(".flow-validation")).toContainText("流程图完整");
   await expect(
@@ -227,6 +238,18 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await page.getByRole("button", { name: "修正流程图" }).click();
   await linkNode(page, "pulse-1", "回到判断 →", "condition-tower");
   await expect(student.locator("[data-edge-kind='return']")).toHaveCount(1);
+  await expect(
+    page.locator(".teacher-correction-workspace .moon-panel"),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "开始模拟", exact: true }).click();
+  await expect(
+    page.locator(".teacher-correction-workspace .run-status"),
+  ).toContainText("任务完成：6 轮，6 格", { timeout: 25000 });
+  const teacherSimulation = await (
+    await student.request.get("/api/student/me")
+  ).json();
+  expect(teacherSimulation.attempts).toHaveLength(1); // Only the student's earlier broken run.
+  await capture(page, "artifacts/teacher-correction-simulation.png");
   await page.getByRole("button", { name: "完成修正" }).click();
   await expect(student.locator(".flow-validation")).toContainText("流程图完整");
   await capture(student, "artifacts/student-exercise.png");
@@ -279,7 +302,6 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   // A failed attempt made offline must arrive once after reconnection.
   await studentContext.setOffline(true);
   await student.getByRole("button", { name: /02 峡谷巡路/ }).click();
-  await student.getByRole("button", { name: "第 1 步", exact: true }).click();
   await buildL2(student, true);
   await student.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(student.locator(".run-status")).toContainText("越过地图边界");
@@ -319,7 +341,7 @@ test("教师开课、学生闯关、实时画面、独立验收、回放和清�
   await studentContext.close();
 });
 
-test("规范流程图保留分支、时机切换和节点编辑", async ({ page }) => {
+test("自主流程图保留分支、手动重连和节点编辑", async ({ page }) => {
   await page.request.post("/api/teacher/login", {
     data: { username: "Alumos", password: "browser-test-password" },
   });
@@ -396,12 +418,9 @@ test("规范流程图保留分支、时机切换和节点编辑", async ({ page 
   await page.getByRole("button", { name: /03 绕坑一圈/ }).click();
   await expect(page.locator("[data-node]")).toHaveCount(0);
   await buildL4(page);
-  await page.getByRole("button", { name: "0 轮", exact: true }).click();
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(page.locator(".run-status")).toContainText("原地停止（0 轮）");
-  await page
-    .getByRole("button", { name: "先执行，再判断", exact: true })
-    .click();
+  await connectPostL4(page);
   await capture(page, "artifacts/flowchart-loop-post.png");
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(page.locator(".run-status")).toContainText(
@@ -440,9 +459,7 @@ test("第三关空图可运行，补齐流程后比较判断位置", async ({ pa
   await capture(page, "artifacts/flowchart-loop-pre.png");
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(page.locator(".run-status")).toContainText("原地停止（0 轮）");
-  await page
-    .getByRole("button", { name: "先执行，再判断", exact: true })
-    .click();
+  await connectPostL4(page);
   await expect(page.locator('[data-edge-kind="return"]')).toHaveCount(1);
   await page.getByRole("button", { name: "开始模拟", exact: true }).click();
   await expect(page.locator('[data-node="fwd-1"].executing')).toBeVisible();
@@ -544,7 +561,6 @@ test("缺少新浏览器 API 时仍可加载名单、登录、运行和保存记
     await expect(
       student.getByRole("heading", { name: "建立中继通信" }),
     ).toBeVisible();
-    await student.getByRole("button", { name: "6 轮", exact: true }).click();
     await student.getByRole("button", { name: "填入讲评参考方案" }).click();
     await student
       .getByRole("button", { name: "开始模拟", exact: true })
@@ -552,7 +568,7 @@ test("缺少新浏览器 API 时仍可加载名单、登录、运行和保存记
     await expect(student.locator(".run-status")).toContainText("任务完成", {
       timeout: 25000,
     });
-    await expect(student.locator(".attempt-row")).toHaveCount(0);
+    await expect(student.locator(".comparison")).toHaveCount(0);
     await expect
       .poll(async () => {
         const response = await context.request.get("/api/student/me");
@@ -563,7 +579,7 @@ test("缺少新浏览器 API 时仍可加载名单、登录、运行和保存记
     await expect(
       student.getByRole("heading", { name: "建立中继通信" }),
     ).toBeVisible();
-    await expect(student.locator(".attempt-row")).toHaveCount(0);
+    await expect(student.locator(".comparison")).toHaveCount(0);
     await expect(student.locator(".flow-validation")).toContainText(
       "流程图完整",
     );

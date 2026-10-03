@@ -74,6 +74,7 @@ export type Level = {
   title: string;
   brief: string;
   task: string;
+  goal?: string;
   cols: number;
   rows: number;
   start: [number, number, number];
@@ -125,7 +126,8 @@ const lessonCatalog: Level[] = [
     id: "l1",
     title: "建立中继通信",
     brief: "找出反复执行的一组动作",
-    task: "每到一个新格子，发送一次位置脉冲。到达中继塔后停止。",
+    task: "巡视器从基地出发，向东驶向中继塔。每前进一格，都要发送一次位置脉冲。",
+    goal: "到达中继塔，发完当前位置的脉冲后停止。",
     cols: 7,
     rows: 1,
     start: [0, 0, 0],
@@ -149,7 +151,8 @@ const lessonCatalog: Level[] = [
     id: "l2",
     title: "峡谷巡路",
     brief: "先观察，再决定怎样行动",
-    task: "起点车头朝东，正对地图外。沿绿色通道安全到达营地。",
+    task: "巡视器在右下角出发，车头朝东，前方就是地图边界。前方是边界或陨石坑时，左转后再前进。",
+    goal: "沿安全通道到达左上角营地，途中不能越界或掉入坑中。",
     cols: 4,
     rows: 3,
     start: [3, 2, 0],
@@ -225,8 +228,9 @@ const lessonCatalog: Level[] = [
   {
     id: "l4",
     title: "绕坑一圈",
-    brief: "起点条件已经成立",
-    task: "自己拼出绕坑一圈的流程图，再切换判断时机，比较 0 轮与 4 轮的差异。",
+    brief: "绕行后回到出发点",
+    task: "巡视器从左上角基地出发，车头朝东。沿地图外圈顺时针绕过中间的陨石坑。",
+    goal: "完整绕行一圈，回到基地且车头再次朝东，然后停止。",
     cols: 3,
     rows: 3,
     start: [0, 0, 0],
@@ -252,7 +256,8 @@ const lessonCatalog: Level[] = [
 ];
 // Existing water-ice records remain readable, but this lesson presents three tasks.
 export const levels = lessonCatalog.filter((level) => level.id !== "l3");
-export const getLevel = (id: string) => lessonCatalog.find((level) => level.id === id);
+export const getLevel = (id: string) =>
+  lessonCatalog.find((level) => level.id === id);
 
 function makeNode(
   id: string,
@@ -429,7 +434,40 @@ export function planFromBody(
   return { ...base, ...graphForBody(l, base) };
 }
 
+// Metadata describes the connected graph; it never selects the execution order.
+export function describeGraphPlan(plan: Plan): Plan {
+  if (!plan.nodes) return plan;
+  const nodes = new Map(plan.nodes.map((node) => [node.id, node]));
+  const queue = plan.nodes
+    .filter((node) => node.kind === "start")
+    .map((node) => ({ id: node.id, acted: false }));
+  const seen = new Set<string>();
+  for (let index = 0; index < queue.length; index++) {
+    const current = queue[index];
+    if (seen.has(current.id)) continue;
+    seen.add(current.id);
+    const node = nodes.get(current.id);
+    if (!node) continue;
+    if (node.role === "loop-condition")
+      return {
+        ...plan,
+        condition: node.condition || plan.condition,
+        timing: current.acted ? "post" : "pre",
+      };
+    for (const edge of (plan.edges || [])
+      .filter((edge) => edge.from === node.id)
+      .sort((a, b) => Number(a.label === "yes") - Number(b.label === "yes"))) {
+      queue.push({
+        id: edge.to,
+        acted: current.acted || node.kind === "action",
+      });
+    }
+  }
+  return plan;
+}
+
 export function validateFlow(l: Level, p: Plan): FlowValidation {
+  p = describeGraphPlan(p);
   const nodes = p.nodes || [],
     edges = p.edges || [],
     issues: FlowValidation["issues"] = [],
@@ -454,8 +492,6 @@ export function validateFlow(l: Level, p: Plan): FlowValidation {
     fail("DUPLICATE_NODE", "节点编号重复，请删除后重新添加");
   if (!l.conditions.includes(p.condition))
     fail("CONDITION", "请选择本关的停止条件");
-  if (l.timingMode === "fixed-pre" && p.timing !== "pre")
-    fail("TIMING", "判断位置不符合这关任务");
   for (const n of nodes) {
     const allowed =
       n.role === "loop-condition"
@@ -661,28 +697,56 @@ export function initialFrame(l: Level): Frame {
 }
 
 function simulateGraph(l: Level, plan: Plan): Simulation {
-  const nodes = plan.nodes || [], edges = plan.edges || [], byId = new Map(nodes.map(n => [n.id, n]));
-  const state = initialFrame(l), frames: Frame[] = [];
-  const dirs = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  plan = describeGraphPlan(plan);
+  const nodes = plan.nodes || [],
+    edges = plan.edges || [],
+    byId = new Map(nodes.map((n) => [n.id, n]));
+  const state = initialFrame(l),
+    frames: Frame[] = [];
+  const dirs = [
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+    [0, -1],
+  ];
   const names = ["东", "南", "西", "北"];
-  const inside = (x: number, y: number) => x >= 0 && x < l.cols && y >= 0 && y < l.rows;
+  const inside = (x: number, y: number) =>
+    x >= 0 && x < l.cols && y >= 0 && y < l.rows;
   const push = (text: string, node?: FlowNode, edge?: FlowEdge) => {
     state.text = text;
     state.nodeId = node?.id;
     state.edgeId = edge?.id;
     state.active = node?.role === "loop-condition" ? "condition" : null;
-    frames.push({ ...state, visited: [...state.visited], scanned: [...state.scanned] });
+    frames.push({
+      ...state,
+      visited: [...state.visited],
+      scanned: [...state.scanned],
+    });
   };
   const condition = (key: string) => {
-    if (key === "home") return state.x === l.start[0] && state.y === l.start[1] && state.d === l.start[2];
+    if (key === "home")
+      return (
+        state.x === l.start[0] &&
+        state.y === l.start[1] &&
+        state.d === l.start[2]
+      );
     if (key === "battery") return state.battery < 2;
     if (key === "ice") return state.scanResult;
     return !!l.target && state.x === l.target[0] && state.y === l.target[1];
   };
-  let node = nodes.find(n => n.kind === "start"), incoming: FlowEdge | undefined;
-  let stop = "", reason = "", reachedStop = false, actionsThisRound = 0;
+  let node = nodes.find((n) => n.kind === "start"),
+    incoming: FlowEdge | undefined;
+  let stop = "",
+    reason = "",
+    reachedStop = false,
+    stoppedCondition = "",
+    actionsThisRound = 0;
   const visitedThisRound = new Set<string>();
-  const halt = (code: string, message: string) => { stop = code; reason = message; push(message, node, incoming); };
+  const halt = (code: string, message: string) => {
+    stop = code;
+    reason = message;
+    push(message, node, incoming);
+  };
   if (!node) halt("broken", "没有“开始”节点，巡视器还不能出发");
   for (let transitions = 0; node && !stop && transitions < 400; transitions++) {
     if (node.kind === "end") {
@@ -694,89 +758,205 @@ function simulateGraph(l: Level, plan: Plan): Simulation {
     if (node.kind === "start") {
       push("从“开始”出发", node, incoming);
     } else if (node.kind === "decision") {
-      const key = node.role === "loop-condition" ? node.condition || plan.condition : "hazard";
-      if (key !== "hazard" && !l.conditions.includes(key)) { halt("broken", "判断条件不属于这一关"); break; }
+      const key =
+        node.role === "loop-condition"
+          ? node.condition || plan.condition
+          : "hazard";
+      if (key !== "hazard" && !l.conditions.includes(key)) {
+        halt("broken", "判断条件不属于这一关");
+        break;
+      }
       let answer: boolean | null;
       if (key === "hazard") {
-        const x = state.x + dirs[state.d][0], y = state.y + dirs[state.d][1];
+        const x = state.x + dirs[state.d][0],
+          y = state.y + dirs[state.d][1];
         answer = !inside(x, y) || l.craters.includes(`${x},${y}`);
       } else answer = condition(key);
-      push(`判断“${key === "hazard" ? "前方危险？" : conditions[key]}”：${answer === null ? "还没有数据" : answer ? "是" : "否"}`, node, incoming);
-      if (answer === null) { halt("noData", "这里还没有可判断的数据"); break; }
+      push(
+        `判断“${key === "hazard" ? "前方危险？" : conditions[key]}”：${answer === null ? "还没有数据" : answer ? "是" : "否"}`,
+        node,
+        incoming,
+      );
+      if (answer === null) {
+        halt("noData", "这里还没有可判断的数据");
+        break;
+      }
       if (node.role === "loop-condition") {
-        if (answer) reachedStop = true;
-        else {
-          if (actionsThisRound === 0 && state.rounds > 0) { halt("endless", "判断后又回到判断，没有执行动作"); break; }
+        if (answer) {
+          reachedStop = true;
+          stoppedCondition = key;
+        } else {
+          if (actionsThisRound === 0 && state.rounds > 0) {
+            halt("endless", "判断后又回到判断，没有执行动作");
+            break;
+          }
           state.rounds++;
           actionsThisRound = 0;
           visitedThisRound.clear();
         }
       }
-      const choices = edges.filter(e => e.from === node!.id && e.label === (answer ? "yes" : "no"));
-      if (choices.length !== 1) { halt("broken", `“${answer ? "是" : "否"}”分支需要一条箭头`); break; }
+      const choices = edges.filter(
+        (e) => e.from === node!.id && e.label === (answer ? "yes" : "no"),
+      );
+      if (choices.length !== 1) {
+        halt("broken", `“${answer ? "是" : "否"}”分支需要一条箭头`);
+        break;
+      }
       incoming = choices[0];
-      if (!byId.has(incoming.to)) { halt("broken", "箭头没有接到图形上"); break; }
+      if (!byId.has(incoming.to)) {
+        halt("broken", "箭头没有接到图形上");
+        break;
+      }
       node = byId.get(incoming.to);
       continue;
     } else if (node.kind === "action" && node.block) {
-      if (!l.blocks.includes(node.block) && node.role !== "branch-action") { halt("broken", "这个动作不属于本关"); break; }
-      if (visitedThisRound.has(node.id)) { halt("endless", "箭头在动作之间打转，没有回到判断"); break; }
+      if (!l.blocks.includes(node.block) && node.role !== "branch-action") {
+        halt("broken", "这个动作不属于本关");
+        break;
+      }
+      if (visitedThisRound.has(node.id)) {
+        halt("endless", "箭头在动作之间打转，没有回到判断");
+        break;
+      }
       visitedThisRound.add(node.id);
       if (state.rounds === 0) state.rounds = 1;
-      if (state.battery <= 0) { halt("noPower", "电量耗尽"); break; }
-      state.battery--; state.steps++; actionsThisRound++;
+      if (state.battery <= 0) {
+        halt("noPower", "电量耗尽");
+        break;
+      }
+      state.battery--;
+      state.steps++;
+      actionsThisRound++;
       if (node.block === "fwd") {
-        const x = state.x + dirs[state.d][0], y = state.y + dirs[state.d][1];
-        if (!inside(x, y)) { halt("out", `第 ${state.rounds} 轮：向${names[state.d]}前进，越过地图边界`); break; }
-        state.x = x; state.y = y; state.moves++;
-        if (!state.visited.includes(`${x},${y}`)) state.visited.push(`${x},${y}`);
-        push(`第 ${state.rounds} 轮：前进到第 ${x + 1} 列、第 ${y + 1} 行`, node, incoming);
-        if (l.craters.includes(`${x},${y}`)) { halt("crash", "坠入陨石坑"); break; }
+        const x = state.x + dirs[state.d][0],
+          y = state.y + dirs[state.d][1];
+        if (!inside(x, y)) {
+          halt(
+            "out",
+            `第 ${state.rounds} 轮：向${names[state.d]}前进，越过地图边界`,
+          );
+          break;
+        }
+        state.x = x;
+        state.y = y;
+        state.moves++;
+        if (!state.visited.includes(`${x},${y}`))
+          state.visited.push(`${x},${y}`);
+        push(
+          `第 ${state.rounds} 轮：前进到第 ${x + 1} 列、第 ${y + 1} 行`,
+          node,
+          incoming,
+        );
+        if (l.craters.includes(`${x},${y}`)) {
+          halt("crash", "坠入陨石坑");
+          break;
+        }
       } else if (node.block === "pulse") {
-        state.pulses++; push(`第 ${state.rounds} 轮：发送当前位置脉冲`, node, incoming);
-        if (!state.moves) { halt("badPulse", "位置脉冲发早了，请先前进"); break; }
+        state.pulses++;
+        push(`第 ${state.rounds} 轮：发送当前位置脉冲`, node, incoming);
+        if (!state.moves) {
+          halt("badPulse", "位置脉冲发早了，请先前进");
+          break;
+        }
       } else if (node.block === "left" || node.block === "right") {
         state.d = (state.d + (node.block === "left" ? 3 : 1)) % 4;
-        state.turns++; push(`第 ${state.rounds} 轮：${blocks[node.block]}，朝${names[state.d]}`, node, incoming);
+        state.turns++;
+        push(
+          `第 ${state.rounds} 轮：${blocks[node.block]}，朝${names[state.d]}`,
+          node,
+          incoming,
+        );
       } else if (node.block === "scan") {
-        const sample = l.samples?.findIndex(([x,y]) => x === state.x && y === state.y) ?? -1;
-        if (sample < 0) { halt("notSample", "基地不是待测样点"); break; }
-        state.scans++; state.scanResult = sample === 7;
+        const sample =
+          l.samples?.findIndex(([x, y]) => x === state.x && y === state.y) ??
+          -1;
+        if (sample < 0) {
+          halt("notSample", "基地不是待测样点");
+          break;
+        }
+        state.scans++;
+        state.scanResult = sample === 7;
         if (!state.scanned.includes(sample)) state.scanned.push(sample);
-        push(`扫描 ${sample + 1} 号样点：${state.scanResult ? "发现水冰" : "无信号"}`, node, incoming);
+        push(
+          `扫描 ${sample + 1} 号样点：${state.scanResult ? "发现水冰" : "无信号"}`,
+          node,
+          incoming,
+        );
       } else if (node.block === "advance") {
-        const sample = l.samples?.findIndex(([x,y]) => x === state.x && y === state.y) ?? -1;
+        const sample =
+          l.samples?.findIndex(([x, y]) => x === state.x && y === state.y) ??
+          -1;
         const next = l.samples?.[sample + 1];
-        if (!next) { halt("routeEnd", "已到路线终点"); break; }
-        const direction = dirs.findIndex(([dx,dy]) => dx === next[0] - state.x && dy === next[1] - state.y);
-        if (direction < 0) { halt("routeEnd", "已到路线终点"); break; }
-        if (direction !== state.d) { state.turns++; state.d = direction; }
-        state.x = next[0]; state.y = next[1]; state.moves++;
-        if (!state.visited.includes(`${state.x},${state.y}`)) state.visited.push(`${state.x},${state.y}`);
+        if (!next) {
+          halt("routeEnd", "已到路线终点");
+          break;
+        }
+        const direction = dirs.findIndex(
+          ([dx, dy]) => dx === next[0] - state.x && dy === next[1] - state.y,
+        );
+        if (direction < 0) {
+          halt("routeEnd", "已到路线终点");
+          break;
+        }
+        if (direction !== state.d) {
+          state.turns++;
+          state.d = direction;
+        }
+        state.x = next[0];
+        state.y = next[1];
+        state.moves++;
+        if (!state.visited.includes(`${state.x},${state.y}`))
+          state.visited.push(`${state.x},${state.y}`);
         push(`沿路线到达 ${sample + 2} 号样点`, node, incoming);
       }
-    } else { halt("broken", "这一步不是可执行的动作"); break; }
-    const choices = edges.filter(e => e.from === node!.id && !e.label);
-    if (choices.length !== 1) { halt("broken", "执行到这里没有唯一的下一条箭头"); break; }
+    } else {
+      halt("broken", "这一步不是可执行的动作");
+      break;
+    }
+    const choices = edges.filter((e) => e.from === node!.id && !e.label);
+    if (choices.length !== 1) {
+      halt("broken", "执行到这里没有唯一的下一条箭头");
+      break;
+    }
     incoming = choices[0];
-    if (!byId.has(incoming.to)) { halt("broken", "箭头没有接到图形上"); break; }
+    if (!byId.has(incoming.to)) {
+      halt("broken", "箭头没有接到图形上");
+      break;
+    }
     node = byId.get(incoming.to);
   }
   if (!stop) halt("endless", "超过运行上限，请检查箭头和停止条件");
-  const win = stop === "condition" && (
-    l.id === "l1" ? state.moves === 6 && state.pulses === 6 && plan.condition === "tower" :
-    l.id === "l2" ? state.x === 0 && state.y === 0 && state.moves === 5 && state.turns === 2 && plan.condition === "camp" :
-    l.id === "l4" ? state.visited.length === 8 && state.moves === 8 && state.turns === 4 && state.rounds === 4 :
-    state.scanResult === true && state.moves === 8 && state.scans >= 8
-  );
-  if (stop === "condition") reason = win ? `任务完成：${state.rounds} 轮，${state.moves} 格` : state.rounds === 0 ? "条件已经成立，原地停止（0 轮）" : "循环停止，但没有完成任务";
+  const win =
+    stop === "condition" &&
+    (l.id === "l1"
+      ? state.moves === 6 && state.pulses === 6 && stoppedCondition === "tower"
+      : l.id === "l2"
+        ? state.x === 0 &&
+          state.y === 0 &&
+          state.moves === 5 &&
+          state.turns === 2 &&
+          stoppedCondition === "camp"
+        : l.id === "l4"
+          ? stoppedCondition === "home" &&
+            state.visited.length === 8 &&
+            state.moves === 8 &&
+            state.turns === 4 &&
+            state.rounds === 4
+          : state.scanResult === true && state.moves === 8 && state.scans >= 8);
+  if (stop === "condition")
+    reason = win
+      ? `任务完成：${state.rounds} 轮，${state.moves} 格`
+      : state.rounds === 0
+        ? "条件已经成立，原地停止（0 轮）"
+        : "循环停止，但没有完成任务";
   push(reason, node, incoming);
   return { frames, win, reason, stop };
 }
 export function simulate(id: string, p: Plan): Simulation {
   const l = getLevel(id);
   if (!l) throw new Error("未知关卡");
-  if (p.nodes !== undefined || p.edges !== undefined) return simulateGraph(l, p);
+  if (p.nodes !== undefined || p.edges !== undefined)
+    return simulateGraph(l, p);
   const graph = { body: p.body, steps: [] as FlowValidation["steps"] },
     body = graph.body;
   if (

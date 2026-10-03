@@ -117,5 +117,120 @@ test("近距离向下连线不绕到图形外侧", () => {
     },
     [positions[0], { ...positions[1], x: 300 }],
   )!;
-  assert.equal(offset.d, "M 340 252 L 340 276.5 L 300 276.5 L 300 301");
+  assert.deepEqual(offset.points, [
+    { x: 340, y: 252 },
+    { x: 340, y: 276.5 },
+    { x: 300, y: 276.5 },
+    { x: 300, y: 301 },
+  ]);
+});
+
+test("就近连接结束，不强制绕整图；绕开动作且没有回折", () => {
+  const nearBorder = [
+    {
+      node: { id: "a", kind: "action" as const },
+      x: 122,
+      y: 400,
+      width: 196,
+      height: 54,
+    },
+    {
+      node: { id: "b", kind: "action" as const },
+      x: 122,
+      y: 150,
+      width: 196,
+      height: 54,
+    },
+  ];
+  const visibleReturn = edgeRoute(
+    { id: "return", from: "a", to: "b", kind: "return" },
+    nearBorder,
+  )!;
+  assert.ok(
+    visibleReturn.points.every((point) => point.x >= 12),
+    "靠左放置时返回箭头仍完整显示",
+  );
+  const positions = [
+    {
+      node: { id: "decision", kind: "decision" as const },
+      x: 340,
+      y: 200,
+      width: 244,
+      height: 104,
+    },
+    {
+      node: { id: "end", kind: "end" as const },
+      x: 700,
+      y: 200,
+      width: 116,
+      height: 42,
+    },
+    {
+      node: { id: "far", kind: "action" as const },
+      x: 1100,
+      y: 500,
+      width: 196,
+      height: 54,
+    },
+  ];
+  const close = edgeRoute(
+    {
+      id: "yes",
+      from: "decision",
+      to: "end",
+      label: "yes",
+      fromAnchor: "right",
+      toAnchor: "left",
+    },
+    positions,
+  )!;
+  assert.equal(close.d, "M 462 200 L 642 200");
+  const facingAway = edgeRoute(
+    {
+      id: "end",
+      from: "decision",
+      to: "end",
+      label: "yes",
+      fromAnchor: "right",
+      toAnchor: "right",
+    },
+    positions,
+  )!;
+  assert.ok(Math.max(...facingAway.points.map((p) => p.x)) < 900);
+  const blocked = edgeRoute(
+    {
+      id: "line",
+      from: "decision",
+      to: "end",
+      fromAnchor: "bottom",
+      toAnchor: "top",
+    },
+    [
+      positions[0],
+      { ...positions[1], x: 340, y: 600 },
+      { ...positions[2], x: 340, y: 400 },
+    ],
+  )!;
+  for (let i = 1; i < blocked.points.length; i++) {
+    const a = blocked.points[i - 1],
+      b = blocked.points[i];
+    assert.ok(a.x === b.x || a.y === b.y);
+    if (a.x === b.x)
+      assert.ok(
+        a.x <= 230 ||
+          a.x >= 450 ||
+          Math.max(a.y, b.y) <= 361 ||
+          Math.min(a.y, b.y) >= 439,
+      );
+  }
+  for (const route of [close, facingAway, blocked]) {
+    assert.ok(!route.d.includes("NaN"));
+    for (let i = 2; i < route.points.length; i++) {
+      const [a, b, c] = route.points.slice(i - 2, i + 1);
+      assert.ok(
+        (b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) >= 0,
+        "路径不能掉头形成钩子",
+      );
+    }
+  }
 });

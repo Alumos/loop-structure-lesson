@@ -10,9 +10,13 @@ import {
   planFromBody,
   retimeFlow,
   getLevel,
+  describeGraphPlan,
 } from "../shared/engine.js";
 test("课堂只显示三关，标准流程保留原有轮数和路线", () => {
-  assert.deepEqual(levels.map(l => l.id), ["l1", "l2", "l4"]);
+  assert.deepEqual(
+    levels.map((l) => l.id),
+    ["l1", "l2", "l4"],
+  );
   const expected = [
     [6, 6],
     [5, 5],
@@ -52,7 +56,8 @@ test("水冰站停下，不能扫描基地或继续到第九站", () => {
   assert.deepEqual([f.x, f.y], [2, 1]);
   assert.equal(f.scanned.includes(8), false);
   assert.equal(
-    simulate("l3", { ...getLevel("l3")!.answer, body: ["scan", "advance"] }).stop,
+    simulate("l3", { ...getLevel("l3")!.answer, body: ["scan", "advance"] })
+      .stop,
     "notSample",
   );
 });
@@ -86,14 +91,38 @@ test("缺少返回箭头也能运行，停在实际断线的动作", () => {
     simulate("l3", { ...getLevel("l3")!.answer, body: ["advance", "fwd"] }),
   );
 });
-test("第一二关固定判断位置，第三关可比较", () => {
-  assert.equal(levels[0].timingMode, "fixed-pre");
-  assert.equal(levels[1].timingMode, "fixed-pre");
-  assert.equal(levels[2].timingMode, "compare");
+test("判断时机和条件从实际箭头派生，隐藏字段不限制学生连图", () => {
+  for (const level of levels) {
+    for (const timing of ["pre", "post"] as const) {
+      const plan = {
+        ...referencePlan(level.id, timing),
+        timing: timing === "pre" ? ("post" as const) : ("pre" as const),
+        condition: "battery",
+      };
+      const described = describeGraphPlan(plan);
+      assert.equal(described.timing, timing);
+      assert.equal(described.condition, level.answer.condition);
+      assert.equal(
+        validateFlow(level, plan).valid,
+        true,
+        `${level.id}/${timing}`,
+      );
+      assert.equal(
+        simulate(level.id, plan).win,
+        level.id !== "l4" || timing === "post",
+      );
+    }
+  }
+  const battery = planFromBody("l1", {
+    timing: "pre",
+    condition: "battery",
+    body: ["fwd", "pulse"],
+  });
   assert.equal(
-    validateFlow(levels[0], { ...referencePlan("l1"), timing: "post" }).valid,
-    false,
+    describeGraphPlan({ ...battery, condition: "tower" }).condition,
+    "battery",
   );
+  assert.equal(simulate("l1", { ...battery, condition: "tower" }).win, false);
 });
 test("验收三题各 2 分，错误理由不会给满分", () => {
   assert.equal(gradeQuiz("q1", [1, 1]), 2);

@@ -3050,3 +3050,28 @@ body {
 .teacher-flow-tools { margin: 14px 0; border: 1px solid #dbe5f0; background: #fff; }
 .teacher-flow-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 12px 16px; }
 .teacher-flow-actions strong { font-size: 14px; }
+
+/* Put the task and the student's working area first. */
+.mission-heading { margin-bottom: 18px; align-items: flex-start; }
+.mission-heading > div:first-child { flex: 1; min-width: 0; }
+.mission-heading h2 { margin: 6px 0 10px; }
+.mission-heading .mission-context { max-width: none; font-size: 17px; line-height: 1.65; color: #334155; }
+.mission-heading .mission-goal { display: flex; gap: 12px; align-items: flex-start; max-width: none;
+  margin-top: 10px; padding: 13px 16px; border-left: 4px solid #2563eb; border-radius: 6px;
+  background: #e8f0fc; color: #172033; font-size: 20px; font-weight: 600; line-height: 1.55; }
+.mission-goal svg { color: #1d4ed8; flex-shrink: 0; margin-top: 5px; }
+.mission-goal strong { display: block; font-size: 12px; color: #1d4ed8; margin-bottom: 3px; }
+.teacher-correction-workspace { padding: 0 16px 16px; }
+.teacher-correction-note { padding: 10px 12px; margin-bottom: 16px; background: #f1f5f9; color: #475569; font-size: 13px; }
+.moon-panel-linear { min-height: 170px; }
+.moon-panel-linear .map-caption { margin-bottom: 10px; }
+@media (min-width: 1050px) {
+  .exercise-columns, .monitor-frame .exercise-columns, .teacher-main .exercise-columns {
+    grid-template-columns: minmax(240px, .6fr) minmax(0, 1.5fr); gap: 18px;
+  }
+}
+@media (max-width: 600px) {
+  .mission-heading .mission-context { font-size: 16px; }
+  .mission-heading .mission-goal { font-size: 18px; padding: 10px 12px; }
+  .teacher-correction-workspace { padding: 0 10px 10px; }
+}

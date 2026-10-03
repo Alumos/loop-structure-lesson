@@ -33,9 +33,21 @@ import {
   DialogTitle,
   DialogDescription,
 } from "./components/ui/dialog";
-import { Screen } from "./components/Exercise";
+import { Exercise, Screen } from "./components/Exercise";
 import { Flow } from "./components/Flow";
-import { activityNames, levels, quizzes, validateFlow, referencePlan, initialFrame, type Plan } from "../shared/engine";
+import {
+  activityNames,
+  levels,
+  quizzes,
+  validateFlow,
+  referencePlan,
+  initialFrame,
+  simulate,
+  describeGraphPlan,
+  type Frame,
+  type Level,
+  type Plan,
+} from "../shared/engine";
 export function Teacher({ goStudent }: { goStudent: () => void }) {
   const [user, setUser] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
@@ -293,7 +305,7 @@ function Dashboard({ user, logout }: { user: string; logout: () => void }) {
             <div className="text-xs leading-6 text-muted-foreground">
               用过程证据理解学习
               <br />
-              预测 · 运行 · 观察 · 修正
+              作图 · 运行 · 观察 · 修正
             </div>
           </div>
         </aside>
@@ -856,12 +868,27 @@ function Detail({
       currentLevel && snapshot?.plan?.nodes
         ? validateFlow(currentLevel, snapshot.plan)
         : null;
+  useEffect(() => {
+    setEditing(false);
+    setShowAnswer(false);
+    setWorkingPlan(null);
+  }, [mode, currentLevel?.id]);
   const correct = (plan: Plan) => {
     setWorkingPlan(plan);
-    saveQueue.current = saveQueue.current.catch(() => {}).then(async () => {
-      const response = await api(`/teacher/participants/${id}/plan`, { plan }, "PATCH");
-      setDetail((previous: any) => previous && { ...previous, state: response.snapshot });
-    }).catch((error: Error) => onError(error.message));
+    saveQueue.current = saveQueue.current
+      .catch(() => {})
+      .then(async () => {
+        const response = await api(
+          `/teacher/participants/${id}/plan`,
+          { plan },
+          "PATCH",
+        );
+        setDetail(
+          (previous: any) =>
+            previous && { ...previous, state: response.snapshot },
+        );
+      })
+      .catch((error: Error) => onError(error.message));
   };
   return (
     <div>
@@ -874,8 +901,8 @@ function Detail({
           <h1>{members.map((m: any) => m.name).join(" / ") || "正在加载"}</h1>
           <p className="text-muted-foreground text-sm">
             {mode === "live"
-              ? "同步练习区域、巡视方案和鼠标位置"
-              : "只查看流程图变化、预测答案与运行结果，跳过鼠标和动画过程"}
+              ? "同步练习区域、流程图和鼠标位置"
+              : "查看流程图变化、作答与运行结果，跳过鼠标和动画过程"}
           </p>
         </div>
         <div className="flex items-center flex-wrap gap-2">
@@ -981,7 +1008,7 @@ function Detail({
             {events[index]?.label || "回放可能已过保留期，成绩仍可在下方查看。"}
           </div>
           <select
-            aria-label="跳转到方案或预测"
+            aria-label="跳转到方案或作答"
             value={events[index]?.kind === "pointer" ? "" : String(index)}
             onChange={(e) => {
               if (e.target.value) {
@@ -990,7 +1017,7 @@ function Detail({
               }
             }}
           >
-            <option value="">跳转到方案或预测……</option>
+            <option value="">跳转到方案或作答……</option>
             {events.map((e, i) =>
               e.kind !== "pointer" && e.kind !== "step" ? (
                 <option key={e.seq} value={i}>
@@ -1006,52 +1033,59 @@ function Detail({
           <div className="teacher-flow-actions">
             <strong>学生流程图</strong>
             <div className="flex gap-2">
-              <Button size="sm" variant={editing ? "default" : "outline"} onClick={() => {
-                if (!editing) setWorkingPlan(snapshot.plan);
-                setEditing(!editing);
-                setShowAnswer(false);
-              }}><Pencil size={15}/>{editing ? "完成修正" : "修正流程图"}</Button>
-              <Button size="sm" variant={showAnswer ? "default" : "outline"} onClick={() => setShowAnswer(!showAnswer)}>
-                <Eye size={15}/>{showAnswer ? "收起标准答案" : "显示标准答案"}
+              <Button
+                size="sm"
+                variant={editing ? "default" : "outline"}
+                onClick={() => {
+                  if (!editing) setWorkingPlan(snapshot.plan);
+                  setEditing(!editing);
+                  setShowAnswer(false);
+                }}
+              >
+                <Pencil size={15} />
+                {editing ? "完成修正" : "修正流程图"}
+              </Button>
+              <Button
+                size="sm"
+                variant={showAnswer ? "default" : "outline"}
+                onClick={() => setShowAnswer(!showAnswer)}
+              >
+                <Eye size={15} />
+                {showAnswer ? "收起标准答案" : "显示标准答案"}
               </Button>
             </div>
           </div>
-          {showAnswer && <Flow level={currentLevel} plan={referencePlan(currentLevel.id)} frame={initialFrame(currentLevel)} onPlan={() => {}} readonly />}
-          {editing && !showAnswer && <Flow key={`${id}-${currentLevel.id}`} level={currentLevel} plan={workingPlan || snapshot.plan} frame={initialFrame(currentLevel)} onPlan={correct} readonly={false} />}
+          {showAnswer && (
+            <Flow
+              level={currentLevel}
+              plan={referencePlan(currentLevel.id)}
+              frame={initialFrame(currentLevel)}
+              onPlan={() => {}}
+              readonly
+            />
+          )}
+          {editing && (
+            <CorrectionWorkspace
+              key={`${id}-${currentLevel.id}`}
+              level={currentLevel}
+              plan={workingPlan || snapshot.plan}
+              onPlan={correct}
+            />
+          )}
         </div>
       )}
-      <Card className="p-4 mb-4">
-        <div className="section-label mb-3">各关预测记录</div>
-        <div className="grid grid-cols-2 gap-3">
-          {levels.map((l) => {
-            const recorded = detail?.predictions?.find(
-              (v: any) => v.level === l.id,
-            )?.prediction;
-            const prediction =
-              snapshot?.activity === l.id
-                ? snapshot.prediction || recorded
-                : recorded;
-            return (
-              <div key={l.id} className="rounded-lg border p-3 text-sm">
-                <span className="text-muted-foreground">{l.title}</span>
-                <strong className="block mt-1">
-                  {prediction || "尚未作答"}
-                </strong>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-      {!editing && <Card className="monitor-frame">
-        {snapshot ? (
-          <Screen snapshot={snapshot} members={members} />
-        ) : (
-          <div className="empty-state">
-            <Monitor />
-            <p>学生尚未开始操作。</p>
-          </div>
-        )}
-      </Card>}
+      {!editing && (
+        <Card className="monitor-frame">
+          {snapshot ? (
+            <Screen snapshot={snapshot} members={members} />
+          ) : (
+            <div className="empty-state">
+              <Monitor />
+              <p>学生尚未开始操作。</p>
+            </div>
+          )}
+        </Card>
+      )}
       {flowCheck && (
         <div className="flow-evidence">
           <span>
@@ -1118,10 +1152,18 @@ function Detail({
                     {a.win ? <CheckCircle2 size={16} /> : <Clock3 size={16} />}
                   </span>
                   <div>
-                    <strong>{activityNames[a.level]}{levels.find((l) => l.id === a.level)?.timingMode === "compare" ? ` · ${a.plan.timing === "pre" ? "先判断" : "先执行"}` : ""}</strong>
+                    <strong>
+                      {activityNames[a.level]}
+                      {levels.find((l) => l.id === a.level)?.timingMode ===
+                      "compare"
+                        ? ` · ${describeGraphPlan(a.plan).timing === "pre" ? "先判断" : "先执行"}`
+                        : ""}
+                    </strong>
                     <p>{a.reason}</p>
                     <small>
-                      预测：{a.prediction} ·{" "}
+                      {a.prediction && a.prediction !== "未预测"
+                        ? `历史预测：${a.prediction} · `
+                        : ""}
                       {a.assisted ? "提示后尝试" : "自主尝试"} · {time(a.at)}
                     </small>
                   </div>
@@ -1138,8 +1180,12 @@ function Detail({
                         a.plan.nodes &&
                         validateFlow(l, a.plan).valid,
                     ),
-                    pre = records.filter((a: any) => a.plan.timing === "pre"),
-                    post = records.filter((a: any) => a.plan.timing === "post"),
+                    pre = records.filter(
+                      (a: any) => describeGraphPlan(a.plan).timing === "pre",
+                    ),
+                    post = records.filter(
+                      (a: any) => describeGraphPlan(a.plan).timing === "post",
+                    ),
                     compared = pre.some((a: any) =>
                       post.some(
                         (b: any) =>
@@ -1182,8 +1228,8 @@ function Detail({
           <Card className="p-5">
             <h2 className="font-semibold">过程表现 · 教师核定</h2>
             <p className="text-xs text-muted-foreground mt-2 mb-4">
-              结合预测、流程图与返回箭头、修正与合作、如实记录四项证据，每项 1
-              分，共 4 分。
+              结合运行观察、流程图与返回箭头、修正与合作、如实记录四项证据，每项
+              1 分，共 4 分。
             </p>
             <label className="field-label">
               学生
@@ -1493,6 +1539,74 @@ function Storage({
           </Button>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function CorrectionWorkspace({
+  level,
+  plan,
+  onPlan,
+}: {
+  level: Level;
+  plan: Plan;
+  onPlan: (plan: Plan) => void;
+}) {
+  const [frame, setFrame] = useState<Frame>(() => initialFrame(level));
+  const [running, setRunning] = useState(false),
+    [result, setResult] = useState<string>();
+  const [hint, setHint] = useState(false);
+  const token = useRef(0);
+  const stop = () => {
+    token.current++;
+    setRunning(false);
+  };
+  useEffect(() => {
+    token.current++;
+    setRunning(false);
+    setResult(undefined);
+    setFrame(initialFrame(level));
+    return () => {
+      token.current++;
+    };
+  }, [level, plan]);
+  async function run() {
+    const simulation = simulate(level.id, plan),
+      current = ++token.current;
+    setFrame(initialFrame(level));
+    setResult(undefined);
+    setRunning(true);
+    for (const next of simulation.frames) {
+      await new Promise((resolve) => setTimeout(resolve, 460));
+      if (current !== token.current) return;
+      setFrame(next);
+    }
+    setRunning(false);
+    setResult(simulation.reason);
+  }
+  return (
+    <div className="teacher-correction-workspace">
+      <p className="teacher-correction-note">
+        修改会同步给学生。点击“开始模拟”查看当前流程图的运行过程；教师模拟不计入学生尝试成绩。
+      </p>
+      <Exercise
+        snapshot={{ activity: level.id, plan, frame, running, result, hint }}
+        showNotes={false}
+        onRun={() => void run()}
+        onStop={stop}
+        onChange={(patch) => {
+          if (patch.plan) {
+            stop();
+            onPlan(patch.plan);
+          }
+          if (patch.frame) {
+            stop();
+            setFrame(patch.frame);
+            setResult(undefined);
+          }
+          if (patch.hint !== undefined) setHint(patch.hint);
+        }}
+      />
     </div>
   );
 }

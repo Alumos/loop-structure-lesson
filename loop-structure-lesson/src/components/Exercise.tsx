@@ -8,7 +8,6 @@ import {
   Lightbulb,
   MousePointer2,
   Play,
-  Radio,
   RotateCcw,
   Satellite,
   Square,
@@ -17,7 +16,6 @@ import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 import { Textarea } from "./ui/input";
 import {
-  conditions,
   levels,
   getLevel,
   quizzes,
@@ -25,8 +23,6 @@ import {
   initialPlan,
   planFromBody,
   referencePlan,
-  retimeFlow,
-  simulate,
   type Snapshot,
   type Plan,
   type Level,
@@ -46,12 +42,12 @@ export function MoonBoard({
   frame: Frame;
 }) {
   return (
-    <div className="moon-panel">
+    <div className={cn("moon-panel", l.rows === 1 && "moon-panel-linear")}>
       <div className="map-caption">
         <span>
           <span className="live-dot" /> 月面遥测
         </span>
-        <span>SIMULATION / {l.id.toUpperCase()}</span>
+        <span>{l.title}</span>
       </div>
       <div
         className="moon-grid"
@@ -137,7 +133,7 @@ export function Exercise({
   onStop = () => {},
   readonly = false,
   answersOpen = false,
-  attempts = [],
+  showNotes = true,
 }: {
   snapshot: Snapshot;
   onChange?: Change;
@@ -146,6 +142,7 @@ export function Exercise({
   readonly?: boolean;
   answersOpen?: boolean;
   attempts?: any[];
+  showNotes?: boolean;
 }) {
   s = restoreSnapshot(s);
   const l = getLevel(s.activity);
@@ -168,9 +165,20 @@ export function Exercise({
     <div className="exercise">
       <div className="mission-heading">
         <div>
-          <div className="eyebrow">任务 {levels.findIndex(v => v.id === l.id) + 1} / 03</div>
+          <div className="eyebrow">
+            任务 {levels.findIndex((v) => v.id === l.id) + 1} / 03
+          </div>
           <h2>{l.title}</h2>
-          <p>{l.task}</p>
+          <p className="mission-context">{l.task}</p>
+          {l.goal && (
+            <p className="mission-goal">
+              <Flag size={20} />
+              <span>
+                <strong>任务目标</strong>
+                {l.goal}
+              </span>
+            </p>
+          )}
         </div>
         <div className="orbit-icon">
           <Satellite />
@@ -202,29 +210,6 @@ export function Exercise({
               <span>剩余电量</span>
             </div>
           </div>
-          <Card className="p-4">
-            <div className="section-label">
-              <Radio size={15} />
-              运行前想一想
-            </div>
-            <p className="my-3 text-sm">{l.prediction}</p>
-            <div className="flex flex-wrap gap-2">
-              {l.options.map((v) => (
-                <Button
-                  key={v}
-                  variant={s.prediction === v ? "default" : "outline"}
-                  size="sm"
-                  disabled={readonly || s.running}
-                  onClick={() =>
-                    onChange({ prediction: v }, "predict", `预测：${v}`)
-                  }
-                >
-                  {s.prediction === v && <Check />}
-                  {v}
-                </Button>
-              ))}
-            </div>
-          </Card>
           <div className="flex flex-wrap gap-2">
             <Button
               className="flex-1"
@@ -268,110 +253,26 @@ export function Exercise({
             <span className="live-dot" />
             {frame.text}
           </div>
-          {l.timingMode === "compare" && attempts.length > 0 && (
-            <div className="comparison">
-              <div className="section-label">我的对照记录</div>
-              {(["pre", "post"] as const).map((t) => {
-                const matching = attempts.filter(
-                  (a) => a.level === l.id && a.plan.timing === t,
-                );
-                const a = matching[matching.length - 1];
-                let final: Frame | undefined;
-                if (a) {
-                  try {
-                    const frames = simulate(l.id, a.plan).frames;
-                    final = frames[frames.length - 1];
-                  } catch {
-                    /* Retain old recorded results. */
-                  }
+          {showNotes && (
+            <label className="block text-sm">
+              <span className="section-label mb-2">观察与修正</span>
+              <Textarea
+                placeholder="我发现……所以我把……"
+                maxLength={1000}
+                value={s.explanation || ""}
+                disabled={readonly}
+                onChange={(e) =>
+                  onChange(
+                    { explanation: e.target.value },
+                    "explain",
+                    "补充观察与修正理由",
+                  )
                 }
-                return (
-                  <div key={t} className="attempt-row">
-                    <span>{t === "pre" ? "先判断" : "先执行"}</span>
-                    <div>
-                      <strong>{a ? a.reason : "尚未运行"}</strong>
-                      {final && (
-                        <small>
-                          {final.rounds} 轮 · 第 {final.x + 1} 列、第{" "}
-                          {final.y + 1} 行 · 朝
-                          {["东", "南", "西", "北"][final.d]}
-                        </small>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              />
+            </label>
           )}
-          <label className="block text-sm">
-            <span className="section-label mb-2">观察与修正</span>
-            <Textarea
-              placeholder="我发现……所以我把……"
-              maxLength={1000}
-              value={s.explanation || ""}
-              disabled={readonly}
-              onChange={(e) =>
-                onChange(
-                  { explanation: e.target.value },
-                  "explain",
-                  "补充观察与修正理由",
-                )
-              }
-            />
-          </label>
         </div>
         <div className="designer">
-          <div className="designer-heading">
-            <div>
-              <span className="section-label">巡视方案</span>
-              <p className="text-xs text-muted-foreground mt-1">
-                反复做什么，依据什么停止？
-              </p>
-            </div>
-            <span className="small-tag">{plan.nodes?.length || 0} 个节点</span>
-          </div>
-          <div className="p-4 space-y-4">
-            <label className="field-label">
-              停止条件
-              <select
-                disabled={readonly || s.running}
-                value={plan.condition}
-                onChange={(e) => {
-                  const next = initialPlan(l.id);
-                  edit({
-                    ...next,
-                    timing: plan.timing,
-                    condition: e.target.value,
-                  });
-                }}
-              >
-                {l.conditions.map((c) => (
-                  <option value={c} key={c}>
-                    {conditions[c]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {l.timingMode === "compare" ? (
-              <div className="segmented">
-                {(["pre", "post"] as const).map((t) => (
-                  <button
-                    key={t}
-                    disabled={readonly || s.running}
-                    className={plan.timing === t ? "selected" : ""}
-                    onClick={() => edit(retimeFlow(l, plan, t))}
-                  >
-                    {t === "pre" ? "先判断，再执行" : "先执行，再判断"}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {l.timingMode === "compare" && (
-              <p className="text-xs text-muted-foreground">
-                循环体保持不变，只比较判断位置。
-              </p>
-            )}
-          </div>
           <Flow
             key={l.id}
             level={l}

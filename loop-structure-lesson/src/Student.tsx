@@ -250,7 +250,7 @@ export function Student({ goTeacher }: { goTeacher: () => void }) {
             </form>
           )}
           <p className="entry-notice">
-            本课堂保存流程图方案、预测答案与练习结果，供老师指导与讲评。鼠标和运行画面仅供实时观察，不保存轨迹。
+            本课堂保存流程图方案、作答与练习结果，供老师指导与讲评。鼠标和运行画面仅供实时观察，不保存轨迹。
           </p>
           {enrollment?.stale && (
             <p className="text-xs text-amber-700">

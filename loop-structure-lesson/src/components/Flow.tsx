@@ -21,18 +21,21 @@ import {
   blocks,
   conditions,
   validateFlow,
+  describeGraphPlan,
   type FlowAnchor,
   type FlowEdge,
   type FlowNode,
   type Frame,
   type Level,
   type Plan,
+  type PaletteNode,
 } from "../../shared/engine";
 import { cn } from "../lib/utils";
 import { snapPoint, arrangeFlow, classifyFlowEdges } from "../lib/flow-layout";
 
 type Point = { x: number; y: number };
-type Position = Point & { node: FlowNode; width: number; height: number };
+import { anchorPoint, edgeRoute, type Position } from "../lib/flow-routing";
+export { edgeRoute } from "../lib/flow-routing";
 type Gesture = { pointerId: number; start: Point; current: Point } & (
   | { type: "palette"; paletteId: string }
   | { type: "move"; nodeId: string; origin: Point }
@@ -40,12 +43,6 @@ type Gesture = { pointerId: number; start: Point; current: Point } & (
 );
 const anchors: FlowAnchor[] = ["top", "right", "bottom", "left"];
 const anchorNames = { top: "上", right: "右", bottom: "下", left: "左" };
-const vectors: Record<FlowAnchor, Point> = {
-  top: { x: 0, y: -1 },
-  right: { x: 1, y: 0 },
-  bottom: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-};
 function nodeText(n?: FlowNode) {
   if (!n) return "未连接节点";
   if (n.kind === "start") return "开始";
@@ -101,79 +98,6 @@ function positionsFor(
   return { positions, height: Math.max(250, y) };
 }
 
-function anchorPoint(p: Position, anchor: FlowAnchor): Point {
-  const v = vectors[anchor];
-  return { x: p.x + (v.x * p.width) / 2, y: p.y + (v.y * p.height) / 2 };
-}
-export function edgeRoute(e: FlowEdge, positions: Position[]) {
-  const a = positions.find((p) => p.node.id === e.from),
-    b = positions.find((p) => p.node.id === e.to);
-  if (!a || !b) return null;
-  const from =
-    e.kind === "return"
-      ? "left"
-      : e.fromAnchor || (e.label === "yes" ? "right" : "bottom");
-  const to = e.kind === "return" ? "left" : e.toAnchor || "top";
-  const s = anchorPoint(a, from),
-    t = anchorPoint(b, to),
-    v = vectors[from],
-    w = vectors[to];
-  const u = { x: s.x + v.x * 28, y: s.y + v.y * 28 },
-    z = { x: t.x + w.x * 28, y: t.y + w.y * 28 };
-  if (e.kind !== "return" && from === "bottom" && to === "top" && t.y > s.y) {
-    const mid = (s.y + t.y) / 2;
-    return {
-      d:
-        s.x === t.x
-          ? `M ${s.x} ${s.y} L ${t.x} ${t.y}`
-          : `M ${s.x} ${s.y} L ${s.x} ${mid} L ${t.x} ${mid} L ${t.x} ${t.y}`,
-      x: s.x + 10,
-      y: mid,
-      text: e.label === "yes" ? "是" : e.label === "no" ? "否" : "",
-    };
-  }
-  if (e.kind === "return") {
-    const lane = Math.max(
-      12,
-      Math.min(...positions.map((p) => p.x - p.width / 2)) - 38,
-    );
-    return {
-      d: `M ${s.x} ${s.y} L ${lane} ${s.y} L ${lane} ${t.y} L ${t.x} ${t.y}`,
-      x: lane + 8,
-      y: (s.y + t.y) / 2,
-      text: [e.label === "yes" ? "是" : e.label === "no" ? "否" : "", "返回"]
-        .filter(Boolean)
-        .join(" · "),
-    };
-  }
-  let middle: string;
-  if (b.node.kind === "end" && e.label === "yes") {
-    // Keep the stop branch outside the body so it cannot look like it enters an action.
-    const lane = Math.max(...positions.map((p) => p.x + p.width / 2)) + 38;
-    middle = `L ${lane} ${u.y} L ${lane} ${z.y}`;
-  } else if (v.x && w.x) {
-    const x = (u.x + z.x) / 2;
-    middle = `L ${x} ${u.y} L ${x} ${z.y}`;
-  } else if (v.y && w.y) {
-    // Route around the nodes when their vertical outlets face away from each other.
-    if (u.y > z.y && from === "bottom" && to === "top") {
-      const x = Math.max(a.x + a.width / 2, b.x + b.width / 2) + 38;
-      middle = `L ${x} ${u.y} L ${x} ${z.y}`;
-    } else {
-      const y = (u.y + z.y) / 2;
-      middle = `L ${u.x} ${y} L ${z.x} ${y}`;
-    }
-  } else middle = v.x ? `L ${z.x} ${u.y}` : `L ${u.x} ${z.y}`;
-  return {
-    d: `M ${s.x} ${s.y} L ${u.x} ${u.y} ${middle} L ${z.x} ${z.y} L ${t.x} ${t.y}`,
-    x: u.x + 7,
-    y: u.y - 7,
-    text: [e.label === "yes" ? "是" : e.label === "no" ? "否" : ""]
-      .filter(Boolean)
-      .join(" · "),
-  };
-}
-
 export function Flow({
   level,
   plan,
@@ -212,7 +136,7 @@ export function Flow({
       () => validateFlow(level, { ...plan, edges }),
       [level, plan, edges],
     );
-  const scale = Math.min(1, Math.max(0.65, viewportWidth / 900)) * zoom;
+  const scale = Math.min(1, Math.max(0.8, viewportWidth / 900)) * zoom;
   const legacy = positionsFor(nodes, plan.timing, 900);
   const storedPositions = legacy.positions.map((p) => ({
     ...p,
@@ -262,16 +186,20 @@ export function Flow({
       ? nodes.find((n) => n.role === "loop-condition")?.id
       : validation.steps[typeof frame.active === "number" ? frame.active : -1]
           ?.nodeId);
-  const palette = level.palette.map((n) =>
-    n.role === "loop-condition"
-      ? {
-          ...n,
-          id: `condition-${plan.condition}`,
-          label: conditions[plan.condition],
-          condition: plan.condition,
-        }
-      : n,
-  );
+  const palette: PaletteNode[] = [
+    ...level.palette,
+    ...level.conditions
+      .filter(
+        (condition) => !level.palette.some((n) => n.condition === condition),
+      )
+      .map((condition) => ({
+        id: `condition-${condition}`,
+        label: conditions[condition],
+        kind: "decision" as const,
+        role: "loop-condition" as const,
+        condition,
+      })),
+  ];
   const cancel = () => {
     gestureRef.current = null;
     setGesture(null);
@@ -294,10 +222,10 @@ export function Flow({
   const apply = (next: Plan) => {
     if (locked) return;
     setHistory((v) => [...v.slice(-29), plan]);
-    const normalized = {
+    const normalized = describeGraphPlan({
       ...next,
       edges: classifyFlowEdges(next.nodes || [], next.edges || []),
-    };
+    });
     const check = validateFlow(level, normalized);
     onPlan({
       ...normalized,
